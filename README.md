@@ -1,3 +1,5 @@
+> **Community fork: Blender-Sith Agentic.** Focused fixes for sharp/custom-normal export and hexadecimal metadata, with reproducible background checks. Read [fork changes and limitations](FORK.md) and [agent/CLI usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained below.
+
 <div align="center">
 
 # 🎮 Sith Engine Toolkit for Blender

@@ -1,13 +1,13 @@
 schema_version = "1.0.0"
 
 id = "sith"
-name = "Sith Game Engine Formats (.3do, .mat, .key)"
-version = "1.0.0-rc4"
-tagline = "Import/export 3DO models, MAT textures & KEY animations for games based on the Sith game engine"
-maintainer = "Crt Vavros"
+name = "Blender Sith (Coda)"
+version = "1.0.1"
+tagline = "Sith model formats with corner-normal and metadata fixes"
+maintainer = "Coda Lilitari; based on Blender-Sith by Crt Vavros"
 type = "add-on"
 
-website = "https://github.com/smlu/blender-sith"
+website = "https://gitlab.com/codalilitari/blender-sith"
 tags = ["Import-Export"]
 
 blender_version_min = "5.0.0"

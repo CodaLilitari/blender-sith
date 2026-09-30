@@ -1,0 +1,131 @@
+{
+  "schema": "blender-sith-agentic-regression-v1",
+  "blender": "5.1.2",
+  "harness_sha256": "45e607db12c9c680377ef4ce1904d4c82cd27e01f3a24e785b419c85c817be4c",
+  "addon_sha256": {
+    "__init__.py": "0b5eed6dec1d238e7131233ca8c3f3d473f616260b013615689786466a45f434",
+    "blender_manifest.toml": "63671f626524f974a5eb09e7cc2b65cd49b95c1d6417c8b37b8bdda614d67610",
+    "key/__init__.py": "06871eb1d753e0b5168364ee63fc5add462c8306bd79c91dcb297a169d530863",
+    "key/key.py": "0b1cdef1fa64ed3cf339682ccc9d5d657a6ea5d3591af71c7e2f5c851a288cb6",
+    "key/keyExporter.py": "09db0308d0db0a79d163941483f0d048a35974651d889771e0793f7fe7342541",
+    "key/keyImporter.py": "62992b7946663dcfa194203b6bff1cfa72f717937dbcd665367cf1478c942bb0",
+    "key/keyLoader.py": "68195cb6ade68555dd30dfa0a263843d3117603dc0b2740554ac248580d20ce2",
+    "key/keyWriter.py": "bfd7c9da57c4f14231dea51dc9ef7f18983a6dd80f749eab8882dc229b30aab4",
+    "material/__init__.py": "11aef334f9eb66981d7ffc66ab115d5252de0f4a7d2629ca6b915aa7b6341a2d",
+    "material/cmp.py": "a1ce15fddd0467a2b34288cf3cae65253ec4cdc5fbddb7c48a091583a2fa023c",
+    "material/mat.py": "c54447f3e3870541152f5c5438ec29ec9cc86956e8e2794d6701010280e49efa",
+    "model/__init__.py": "9e473b428fa9de93e6ac0742fa37cee79464daea36137f129ca08db2e74687c8",
+    "model/model3do.py": "095f4a33a92c9b027dbe82a737ec820ce429e0e6991c9cfbdab6b843d5bf4286",
+    "model/model3doExporter.py": "f099c1259b8a54f1fa5f610ffb1c2c383fbe75201ff6fba473c8e8b9774b826b",
+    "model/model3doImporter.py": "0f3b2c0a1d42c4fdcece7645a542d819c721c5a8813ebdd6a89015a6d98c60e8",
+    "model/model3doLoader.py": "af0a36478abecd359ebad684b686edd620b2fdcb9fba87e5e8bdf3c15078385d",
+    "model/model3doWriter.py": "a61c27c3050d091df2f2b31a77d3edfa44a2e4a2f9bb6c0dbe02af325f330c85",
+    "model/utils.py": "dbeb24b9e70f96f65b80082b400a1e8235a682835309a74bb77980e6f720ab48",
+    "text/serutils.py": "34a9bf70182023cc4974faac12d3f5d4141988909f558ca2df1b730c13c73ceb",
+    "text/tokenizer.py": "c2a5e448f2498fe8226e0fa59700585c9b39c3291096d2cd39ae710b8ce4b80d",
+    "types/__init__.py": "06a12d199537b99d8526256ed01524d6307675748fd0fa5bd852f51b4c3c4c47",
+    "types/benchmark.py": "b5c1dba73b194aa437b4e33c0fbafe895365f8b526afc5b350487f1be03bbcb1",
+    "types/enum.py": "746ad835b169edf34fd6eb8841658b36adbd149f5bb8cd11de7adeeb48120356",
+    "types/props.py": "d1de2aebd22857c05acf45bcafc59fe9e3f6cb2be6a159aca4d5ff1e192f5c1c",
+    "types/vector.py": "626d26df3af1bb7f1bc26342ba896bae4259e6a110d50515d22e65ff31b7fe8d",
+    "utils.py": "05247a20c8904d8fd2cf0a6c850cbea5f2e8bd12e71bbe15eee128dbc894ee03"
+  },
+  "tests": [
+    {
+      "name": "disconnected_split_normals",
+      "passed": false,
+      "error": "AssertionError: (4, 6)"
+    },
+    {
+      "name": "cube_flat",
+      "passed": false,
+      "error": "AssertionError: (8, 24)"
+    },
+    {
+      "name": "cube_smooth",
+      "passed": true,
+      "details": {
+        "source_vertices": 8,
+        "exported_vertices": 8,
+        "checked_corners": 24,
+        "max_normal_error": 4.1295309247228556e-07,
+        "source_unchanged": true
+      }
+    },
+    {
+      "name": "cube_sharp",
+      "passed": false,
+      "error": "AssertionError: (8, 24)"
+    },
+    {
+      "name": "custom_corner_normals",
+      "passed": false,
+      "error": "AssertionError: (4, 6)"
+    },
+    {
+      "name": "mixed_ngon_disconnected_faces",
+      "passed": false,
+      "error": "AssertionError: (8, 11)"
+    },
+    {
+      "name": "uv_material_color_face_channels",
+      "passed": true,
+      "details": {
+        "roundtrips": [
+          "channels_0_2.1",
+          "channels_1_2.1"
+        ],
+        "uv_seam_vertices": 4,
+        "source_unchanged": true
+      }
+    },
+    {
+      "name": "hierarchy_and_offset",
+      "passed": true,
+      "details": {
+        "nodes": 2,
+        "meshes": 2,
+        "offset_and_local_positions": "preserved"
+      }
+    },
+    {
+      "name": "hex_metadata",
+      "passed": false,
+      "error": "AssertionError: ValueError: the given string must be of max length 4, not 6\nValueError: the given string must be of max length 4, not 6\nValueError: the given string must be of max length 4, not 5\nValueError: return string must be of max length 4, not 6\nValueError: the given string must be of max length 4, not 7\nValueError: return string must be of max length 4, not 6\n"
+    },
+    {
+      "name": "animated_key_roundtrip",
+      "passed": true,
+      "details": {
+        "type": "FFFF",
+        "joints": 1,
+        "frames": [
+          0,
+          10
+        ],
+        "last_position": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  ],
+  "scope": "Synthetic serialized 3DO/KEY only; no game runtime claim",
+  "addon_source_unchanged": true,
+  "passed": 4,
+  "failed": 6,
+  "fixtures_sha256": {
+    "animation.key": "398090c6c5e1330b3a9450cfbe876178c7cc00727923448842f61be7e67d53a4",
+    "channels_0_2.1.3do": "64c61cc0df6b41a00f75ef1fca7d50b98ef9f223c71006f473a4d7823c8dbf77",
+    "channels_1_2.1.3do": "6fe854f3b58cb51edd867ec4519c0d24bda86194652bf68ce5b3204a8c1626cb",
+    "cube_flat.3do": "e6e41f95a83f7ea345c61ebdb58aff884e86ed5878b94d25b4c11669a0ce15f6",
+    "cube_sharp.3do": "da90b9e1e6187afebf87f2216551e44fc4aaad43d70684877f6ee97aab30c0f4",
+    "cube_smooth.3do": "012e8aa47e703c48d40a6e8f30df0b4ca6e5555869d95de0fa92c9516a80fd51",
+    "custom.3do": "cd77a28b346480a95b23a8b8f4447675815d49f3c0109030fe01f34d871af969",
+    "hierarchy.3do": "7a8f7cf577d7fb4aa5acf5cb766cb06830679c672d9eba38e1d247db7aa86458",
+    "mixed.3do": "b42e1595fa16b05da8f2a3ec6c63015b0dda09a9ea43cfc877a47ddb08b43a4a",
+    "split.3do": "a0cc1d5d7e74f151e615fc9fd2c8ac3949aebe1f64493593cef84c50020c69ba",
+    "uv_seam.3do": "8600704bc5ea2abce3c1c3c738cfe7dda88cea0781db37f1b9cb4b03dca91e35"
+  }
+}
