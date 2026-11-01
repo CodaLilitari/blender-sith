@@ -1,4 +1,4 @@
-> **Community fork: Blender-Sith Agentic.** Focused fixes for sharp/custom-normal export and hexadecimal metadata, with reproducible background checks. Read [fork changes and limitations](FORK.md) and [agent/CLI usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained below.
+> **Community fork: Blender-Sith Agentic.** Preserves upstream, Coda's corner-normal/metadata fixes, and the credited fork fixes in the [2026-11-01 audit](docs/fork-audit-2026-11-01.md). Version 1.0.2 adds corrected MAT cel reading, reproducible extension packages, and bounded background validation. Use the **linux-agentic** or **windows** branch and read [platform builds](docs/platform-builds.md), [limitations](FORK.md), and [agent/CLI usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained below.
 
 <div align="center">
 

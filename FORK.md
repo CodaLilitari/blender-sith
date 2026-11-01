@@ -2,13 +2,35 @@
 
 A focused community fork of [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith), based on upstream commit [`ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`](https://github.com/smlu/blender-sith/commit/ecc90131bcfdeabd400225e8a72ce94cbff1ec5c). The original Git history, copyright notices and GPL-3.0-or-later license are retained. Fork changes were developed by Coda in collaboration with Andrei for the JK/MotS Model Workshop.
 
-Fork release identifier: `v1.0.1-coda.1`; Blender extension manifest version: `1.0.1`, display name: **Blender Sith (Coda)**. The extension ID remains `sith`, so use it as an alternative to the upstream extension rather than installing both in the same Blender extension repository.
+Current platform-branch extension version: `1.0.2`, display name: **Blender Sith (Coda)**. The earlier `v1.0.1-coda.1` release is retained. The extension ID remains `sith`, so use it as an alternative to the upstream extension rather than installing both in the same Blender extension repository. See [platform build instructions](docs/platform-builds.md).
 
-Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. The GitHub repository is standalone and is not attached to GitHub's upstream fork network.
+Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
 
 This fork improves model export and scripted metadata assignment. It does not modify Blender itself or supply a new MCP server. The upstream UI and import/export entry points remain available. The project-specific regression scope is Jedi Knight: Dark Forces II and Mysteries of the Sith single-player and multiplayer models, using 3DO 2.1 and KEY; it does not cover level authoring.
 
 ## Changes
+
+### Platform refresh and additional import/export fixes
+
+The [2026-11-01 source audit](docs/fork-audit-2026-11-01.md) found upstream already
+included and preserved all original fixes below. Darth Martyr's independently
+authored material-index separator fix is retained with its source commit and
+author attribution. Long MAT filenames remain separate from their index in
+whitespace-based readers.
+
+A newly reproduced indexed MAT issue is also repaired: without a CMP palette,
+the importer now consumes each cel's mip bytes before reading the next cel.
+Placeholder dimensions and transparency metadata stay intact, and truncated
+skipped data raises an error. Palette-present decoding remains unchanged.
+
+The same add-on code serves Linux and Windows. Platform branches specialize
+their extension manifest and quick-start guide; they do not fork the format
+implementation. Packaging is deterministic and includes the original GPL
+license. The bounded regression launcher isolates Blender preferences, limits
+threads by default, records hashes and results, and refuses output inside Git
+checkouts. These are workflow and resource improvements, not measured renderer
+speedups. The current synthetic matrix has 13 checks; the ten-check results
+below remain the historical baseline.
 
 ### Preserve the normals Blender actually displays
 

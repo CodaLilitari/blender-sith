@@ -21,6 +21,8 @@ import traceback
 
 
 def main():
+    if sys.flags.optimize:
+        raise RuntimeError("Regression assertions require Python optimization to be disabled")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--addon", type=Path, default=Path(__file__).resolve().parents[1] / "sith")
     parser.add_argument("--output", type=Path, required=True, help="New output directory")
@@ -273,6 +275,75 @@ def main():
         assert tuple(key.nodes[0].keyframes[-1].position) == (1,2,3)
         return {"type": "FFFF", "joints": 1, "frames": [0,10], "last_position": [1,2,3]}
 
+    def material_name_delimiters():
+        # Whitespace-based consumers need index and filename as separate fields,
+        # including names that fill or exceed the writer's alignment width.
+        writer = importlib.import_module(name + ".model.model3doWriter")
+        materials = ["short.mat", "a" * 11 + ".mat", "long_material_name_for_export.mat"]
+        model = types.Model3do("material_names")
+        model.materials = materials
+        stream = io.StringIO()
+        writer._write_section_resources(stream, model)
+        rows = [line.split() for line in stream.getvalue().splitlines()
+                if line.strip() and line.strip()[0].isdigit()]
+        assert rows == [[str(i) + ":", mat] for i, mat in enumerate(materials)], rows
+        path = output / "material_names.3do"
+        writer.save3do(model, path, loader.Model3doFileVersion.Version2_1, "Synthetic material delimiter check")
+        loaded, _ = loader.load3do(path)
+        assert loaded.materials == materials
+        return {"material_lengths": [len(mat) for mat in materials], "names_preserved": True}
+
+    def indexed_mat_cels(with_palette):
+        matmod = importlib.import_module(name + ".material.mat")
+        cmpmod = importlib.import_module(name + ".material.cmp")
+        # Two differently sized cels, each with two mip levels. The absent-CMP
+        # path must still consume pixel bytes before reading the next header.
+        ci = matmod.ColorFormat(matmod.ColorMode.Indexed, 8, *([0] * 12))
+        data = matmod.mh_serf.pack(b"MAT ", 0x32, 2, 2, 2) + matmod.cf_serf.pack(*ci)
+        data += b"".join(matmod.mtr_serf.pack(8, 0, 0, 0, 0, 0, 0, 0, 0, i) for i in range(2))
+        data += matmod.mmm_serf.pack(4, 4, 1, 0, 0, 2) + bytes([0, 1] * 8) + bytes([1] * 4)
+        data += matmod.mmm_serf.pack(2, 2, 0, 0, 0, 2) + bytes([2] * 4) + bytes([2])
+        palette = None
+        if with_palette:
+            palette = cmpmod.ColorMap()
+            # Match ColorMap.load's uint8 channel representation.
+            palette.palette = [cmpmod.CmpPaletteRGB(*(matmod.np.uint8(i) for _ in range(3)))
+                               for i in range(256)]
+        stream = io.BytesIO(data)
+        header = matmod._read_header(stream)
+        matmod._read_records(stream, header)
+        cels = [matmod._read_mipmap(stream, ci, palette) for _ in range(2)]
+        assert [(cel.width, cel.height) for cel in cels] == [(4, 4), (2, 2)]
+        assert stream.tell() == len(data), (stream.tell(), len(data))
+        assert [cel.transparent for cel in cels] == [True, False]
+        if with_palette:
+            assert [len(level) for level in cels[0].pixel_data_array] == [64, 16]
+            assert set(cels[0].pixel_data_array[0][3::4]) == {0.0, 1.0}
+            assert set(cels[1].pixel_data_array[0][3::4]) == {1.0}
+        else:
+            assert all(cel.pixel_data_array is None for cel in cels)
+            truncated = io.BytesIO(data[:-1])
+            short_header = matmod._read_header(truncated)
+            matmod._read_records(truncated, short_header)
+            matmod._read_mipmap(truncated, ci)
+            try:
+                matmod._read_mipmap(truncated, ci)
+            except EOFError:
+                pass
+            else:
+                raise AssertionError("Truncated undecoded mipmap was accepted")
+        path = output / ("indexed_palette.mat" if with_palette else "indexed_no_palette.mat")
+        path.write_bytes(data)
+        material = matmod.importMat(path, palette)
+        texture = material.node_tree.nodes["SithTexImage"]
+        assert tuple(texture.image.size) == (4, 4)
+        assert tuple(bpy.data.images[matmod._get_tex_name(1, material.name)].size) == (2, 2)
+        bsdf = next(node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED")
+        assert bsdf.inputs["Alpha"].is_linked
+        assert material.surface_render_method == "BLENDED"
+        return {"palette_supplied": with_palette, "cel_sizes": [[4, 4], [2, 2]],
+                "mip_levels": 2, "transparency_preserved": True}
+
     try:
         check("disconnected_split_normals", split_vertices)
         for style in ("flat", "smooth", "sharp"):
@@ -283,12 +354,15 @@ def main():
         check("hierarchy_and_offset", hierarchy)
         check("hex_metadata", metadata)
         check("animated_key_roundtrip", key_roundtrip)
+        check("material_name_delimiters", material_name_delimiters)
+        check("indexed_mat_cels_with_palette", lambda: indexed_mat_cels(True))
+        check("indexed_mat_cels_without_palette", lambda: indexed_mat_cels(False))
     finally:
         report["addon_source_unchanged"] = before_hashes == hashes()
         report["passed"] = sum(t["passed"] for t in report["tests"])
         report["failed"] = len(report["tests"]) - report["passed"]
         report["fixtures_sha256"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                                     for p in sorted(output.iterdir()) if p.suffix in (".3do", ".key")}
+                                     for p in sorted(output.iterdir()) if p.suffix in (".3do", ".key", ".mat")}
         (output / "regression.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({k: report[k] for k in ("blender", "passed", "failed", "addon_source_unchanged")}, indent=2))
     return 0 if report["failed"] == 0 and report["addon_source_unchanged"] else 1

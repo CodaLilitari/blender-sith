@@ -1,5 +1,10 @@
 # Background use and regression checks
 
+Prefer the bounded platform launcher in [platform-builds.md](platform-builds.md) for
+new jobs. It isolates preferences, limits threads and enforces subprocess deadlines.
+The direct calls below remain available for existing automation. All output paths
+must be external to every Git checkout.
+
 Use Blender-Sith through Blender's normal UI for scene inspection, or run a fresh background Blender process for repeatable export checks. An MCP connection can drive the same Python API when interactive inspection is useful; this fork does not require or install an MCP server.
 
 ## Run the synthetic checks
@@ -7,19 +12,19 @@ Use Blender-Sith through Blender's normal UI for scene inspection, or run a fres
 From the repository root, using a supported Blender executable:
 
 ```text
-blender --background --factory-startup --python-exit-code 1 --python tests/background_regression.py -- --output regression-results
+blender --background --factory-startup --python-exit-code 1 --python tests/background_regression.py -- --output /external/sith-regression-results
 ```
 
 If an existing compatible Python environment already provides `bpy`, the same suite supports:
 
 ```text
-python tests/background_regression.py --output regression-results
+python tests/background_regression.py --output /external/sith-regression-results
 ```
 
 Or explicitly select an existing dependency directory:
 
 ```text
-python tests/background_regression.py --bpy-site /path/to/existing/python/site-packages --output regression-results
+python tests/background_regression.py --bpy-site /path/to/existing/python/site-packages --output /external/sith-regression-results
 ```
 
 `--output` must be a new directory. The suite refuses an interactive Blender process, creates only synthetic objects in the disposable process, registers the add-on in that process, and writes synthetic `.3do`, `.key` and `regression.json` files. It does not save desktop preferences or install an extension. Source hashes before and after make unintended add-on edits visible.
@@ -29,10 +34,15 @@ Exit status 0 means all regression assertions passed and source hashes remained 
 To compare with another checkout, use the identical harness:
 
 ```text
-python tests/background_regression.py --addon /path/to/upstream/sith --output upstream-results
+python tests/background_regression.py --addon /path/to/upstream/sith --output /external/sith-upstream-results
 ```
 
-For the audited base `ecc90131`, the expected comparison is four passes and six failures. Passing controls cover smooth geometry, UV/material/color channels, hierarchy, and animated KEY output. Failing checks exercise the normal and hexadecimal-metadata fixes. An expected upstream nonzero exit is still a failing test result, not a successful export certification.
+The retained historical ten-check harness returned four passes and six failures
+for the audited base `ecc90131`. The current harness adds three material checks,
+so those historical totals are not its expected result. Passing controls cover
+smooth geometry, UV/material/color channels, hierarchy, and animated KEY output.
+The original failing checks exercise the normal and hexadecimal-metadata fixes.
+An upstream nonzero exit is a failing test result, not an export certification.
 
 ## Export a prepared model with a short script
 
