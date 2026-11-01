@@ -57,7 +57,7 @@ class BuildExtensionTests(unittest.TestCase):
         nested.mkdir()
         (nested / "module.py").write_bytes(b"# nested\r\n")
         (nested / "settings.toml").write_bytes(b"enabled = true\n")
-        for name in ("secret.txt", "bytecode.pyc", "image.png"):
+        for name in ("bytecode.pyc",):
             (nested / name).write_bytes(b"do not package")
         cache = nested / "__pycache__"
         cache.mkdir()
@@ -87,6 +87,18 @@ class BuildExtensionTests(unittest.TestCase):
         self.assertFalse(list(self.source.rglob("*.zip")))
         self.assertFalse(list(self.source.rglob("*.receipt.json")))
 
+    def test_unclassified_extension_resources_fail_instead_of_disappearing(self):
+        for name in ("preset.txt", "icon.png", "schema.json"):
+            with self.subTest(name=name):
+                resource = self.addon / name
+                resource.write_bytes(b"required future resource")
+                output = self.root / (name + "-output")
+                result = self.run_builder(output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Unclassified extension resource", result.stderr)
+                self.assertFalse(output.exists())
+                resource.unlink()
+
     def test_repeated_build_bytes_do_not_depend_on_mtime_permissions_or_line_endings(self):
         first, _ = self.build(self.root / "first")
         before = first.read_bytes()
@@ -100,6 +112,7 @@ class BuildExtensionTests(unittest.TestCase):
     def test_platform_names_come_from_manifest(self):
         for platforms, expected in [(["linux-x64"], "linux-x64"),
                                     (["windows-x64"], "windows-x64"),
+                                    (["windows-arm64"], "windows-arm64"),
                                     (["linux-x64", "windows-x64"], "universal")]:
             with self.subTest(platforms=platforms):
                 self.write_manifest(platforms)
@@ -120,8 +133,8 @@ class BuildExtensionTests(unittest.TestCase):
                     self.assertEqual(package.read("blender_manifest.toml"),
                                      (self.addon / "blender_manifest.toml").read_bytes())
 
-    def test_omitted_empty_or_mixed_platforms_keep_universal_name(self):
-        cases = [None, [], ["linux-x64", "macos-arm64"],
+    def test_omitted_or_mixed_platforms_keep_universal_name(self):
+        cases = [None, ["linux-x64", "macos-arm64"],
                  ["windows-x64", "macos-x64"],
                  ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]]
         for index, platforms in enumerate(cases):
@@ -195,6 +208,7 @@ class BuildExtensionTests(unittest.TestCase):
 
     def test_invalid_manifest_cannot_control_archive_path(self):
         for platforms, version in [(["unknown-platform"], "1.2.3"), (None, "../outside"),
+                                   ([], "1.2.3"),
                                    ("linux-x64", "1.2.3"),
                                    (["macos-arm64", "macos-arm64"], "1.2.3"),
                                    (["macos-universal"], "1.2.3"),
