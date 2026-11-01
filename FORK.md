@@ -6,14 +6,15 @@ Current platform-branch extension version: `1.0.2`, display name: **Blender Sith
 
 Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
 
-This fork improves model export and scripted metadata assignment. It does not modify Blender itself or supply a new MCP server. The upstream UI and import/export entry points remain available. The project-specific regression scope is Jedi Knight: Dark Forces II and Mysteries of the Sith single-player and multiplayer models, using 3DO 2.1 and KEY; it does not cover level authoring.
+This fork improves model export, scripted metadata assignment and MAT reading. It also supplies an optional [local MCP companion](docs/MCP.md) for structured 3DO inspection, geometry-only conversion, regression and packaging. The ordinary extension does not require it. The upstream UI and import/export entry points remain available. Synthetic regression checks cover 3DO 2.1, KEY and MAT behavior for JK/MotS workflows; they do not establish retail-game or multiplayer acceptance and do not cover level authoring.
 
 ## Changes
 
 ### Platform refresh and additional import/export fixes
 
-The [2026-11-01 source audit](docs/fork-audit-2026-11-01.md) found upstream already
-included and preserved all original fixes below. Darth Martyr's independently
+The [2026-11-01 source audit](docs/fork-audit-2026-11-01.md) confirmed that current
+upstream was already an ancestor of this fork. The fork retains its original
+fixes below. Darth Martyr's independently
 authored material-index separator fix is retained with its source commit and
 author attribution. Long MAT filenames remain separate from their index in
 whitespace-based readers.
@@ -23,7 +24,7 @@ the importer now consumes each cel's mip bytes before reading the next cel.
 Placeholder dimensions and transparency metadata stay intact, and truncated
 skipped data raises an error. Palette-present decoding remains unchanged.
 
-The same add-on code serves Linux and Windows. Platform branches specialize
+The same add-on code serves Linux, Windows and macOS. Platform branches specialize
 their extension manifest and quick-start guide; they do not fork the format
 implementation. Packaging is deterministic and includes the original GPL
 license. The bounded regression launcher isolates Blender preferences, limits
@@ -31,6 +32,11 @@ threads by default, records hashes and results, and refuses output inside Git
 checkouts. These are workflow and resource improvements, not measured renderer
 speedups. The current synthetic matrix has 13 checks; the ten-check results
 below remain the historical baseline.
+
+The macOS ZIP declares Apple Silicon support in its manifest, but has
+not undergone native macOS execution or installation testing. Linux and Windows
+packages have native Blender 5.1.2 background test evidence; the exact Linux package also passes all 13 checks under Blender 5.2.3 LTS. See release build
+notes for the exact package hashes, runtime matrix and MCP protocol checks.
 
 ### Preserve the normals Blender actually displays
 

@@ -57,7 +57,7 @@ class BuildExtensionTests(unittest.TestCase):
         nested.mkdir()
         (nested / "module.py").write_bytes(b"# nested\r\n")
         (nested / "settings.toml").write_bytes(b"enabled = true\n")
-        for name in ("secret.txt", "bytecode.pyc", "image.png"):
+        for name in ("bytecode.pyc",):
             (nested / name).write_bytes(b"do not package")
         cache = nested / "__pycache__"
         cache.mkdir()
@@ -87,6 +87,18 @@ class BuildExtensionTests(unittest.TestCase):
         self.assertFalse(list(self.source.rglob("*.zip")))
         self.assertFalse(list(self.source.rglob("*.receipt.json")))
 
+    def test_unclassified_extension_resources_fail_instead_of_disappearing(self):
+        for name in ("preset.txt", "icon.png", "schema.json"):
+            with self.subTest(name=name):
+                resource = self.addon / name
+                resource.write_bytes(b"required future resource")
+                output = self.root / (name + "-output")
+                result = self.run_builder(output)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Unclassified extension resource", result.stderr)
+                self.assertFalse(output.exists())
+                resource.unlink()
+
     def test_repeated_build_bytes_do_not_depend_on_mtime_permissions_or_line_endings(self):
         first, _ = self.build(self.root / "first")
         before = first.read_bytes()
@@ -100,10 +112,36 @@ class BuildExtensionTests(unittest.TestCase):
     def test_platform_names_come_from_manifest(self):
         for platforms, expected in [(["linux-x64"], "linux-x64"),
                                     (["windows-x64"], "windows-x64"),
+                                    (["windows-arm64"], "windows-arm64"),
                                     (["linux-x64", "windows-x64"], "universal")]:
             with self.subTest(platforms=platforms):
                 self.write_manifest(platforms)
                 self.build(self.root / expected, expected)
+
+    def test_macos_archive_names_and_receipts_match_manifest_scope(self):
+        cases = [(["macos-arm64"], "macos-arm64"),
+                 (["macos-x64"], "macos-x64"),
+                 (["macos-arm64", "macos-x64"], "macos-universal"),
+                 (["macos-x64", "macos-arm64"], "macos-universal")]
+        for index, (platforms, expected) in enumerate(cases):
+            with self.subTest(platforms=platforms):
+                self.write_manifest(platforms)
+                archive, receipt = self.build(self.root / str(index), expected)
+                self.assertEqual(receipt["platform"], expected)
+                self.assertEqual(receipt["archive"]["name"], archive.name)
+                with zipfile.ZipFile(archive) as package:
+                    self.assertEqual(package.read("blender_manifest.toml"),
+                                     (self.addon / "blender_manifest.toml").read_bytes())
+
+    def test_omitted_or_mixed_platforms_keep_universal_name(self):
+        cases = [None, ["linux-x64", "macos-arm64"],
+                 ["windows-x64", "macos-x64"],
+                 ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]]
+        for index, platforms in enumerate(cases):
+            with self.subTest(platforms=platforms):
+                self.write_manifest(platforms)
+                _, receipt = self.build(self.root / str(index))
+                self.assertEqual(receipt["platform"], "universal")
 
     def test_long_and_unicode_paths_with_spaces(self):
         nested = self.addon / ("long module directory " + "x" * 65) / "démo files"
@@ -169,8 +207,12 @@ class BuildExtensionTests(unittest.TestCase):
                 path.write_bytes(original)
 
     def test_invalid_manifest_cannot_control_archive_path(self):
-        for platforms, version in [(["macos-arm64"], "1.2.3"), (None, "../outside"),
-                                   ("linux-x64", "1.2.3")]:
+        for platforms, version in [(["unknown-platform"], "1.2.3"), (None, "../outside"),
+                                   ([], "1.2.3"),
+                                   ("linux-x64", "1.2.3"),
+                                   (["macos-arm64", "macos-arm64"], "1.2.3"),
+                                   (["macos-universal"], "1.2.3"),
+                                   (["macos-arm64", 1], "1.2.3")]:
             with self.subTest(platforms=platforms, version=version):
                 self.write_manifest(platforms, version)
                 output = self.root / "invalid"
