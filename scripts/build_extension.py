@@ -4,8 +4,10 @@
 
 Run with --output-dir pointing outside every Git checkout. The default source is
 this script's repository; --source-dir selects another explicit source tree.
-Only sith/**/*.py, sith/**/*.toml and the original LICENSE are included. Text
-bytes are normalized from CRLF to LF; the receipt records both hashes.
+Only sith/**/*.py, sith/**/*.toml and the original LICENSE are included. Unknown
+extension resources fail the build so future assets cannot silently disappear.
+Python bytecode/cache directories are ignored. Text bytes are normalized from
+CRLF to LF; the receipt records both hashes.
 """
 from __future__ import annotations
 
@@ -76,6 +78,8 @@ def _source_files(source: Path) -> list[tuple[str, Path]]:
                 if not path.is_file():
                     raise ValueError(f"Source is not a regular file: {path}")
                 files.append((path.relative_to(addon).as_posix(), path))
+            elif path.suffix not in (".pyc", ".pyo"):
+                raise ValueError(f"Unclassified extension resource: {path.relative_to(addon)}; update the explicit package allowlist")
     return sorted(files)
 
 
@@ -89,12 +93,18 @@ def _manifest_identity(data: bytes) -> tuple[str, str]:
     ):
         raise ValueError("Manifest version must be a safe semantic version")
     platforms = manifest.get("platforms", [])
-    supported = {"linux-x64", "windows-x64"}
-    if (not isinstance(platforms, list) or
+    macos_platforms = {"macos-arm64", "macos-x64"}
+    supported = {"linux-x64", "windows-x64", "windows-arm64"} | macos_platforms
+    if (not isinstance(platforms, list) or ("platforms" in manifest and not platforms) or
             any(not isinstance(item, str) or item not in supported for item in platforms) or
             len(set(platforms)) != len(platforms)):
-        raise ValueError("Manifest platforms must contain linux-x64 and/or windows-x64")
-    platform = platforms[0] if len(platforms) == 1 else "universal"
+        raise ValueError("Manifest platforms must be unique values from: " + ", ".join(sorted(supported)))
+    if len(platforms) == 1:
+        platform = platforms[0]
+    elif set(platforms) == macos_platforms:
+        platform = "macos-universal"
+    else:
+        platform = "universal"
     return version, platform
 
 

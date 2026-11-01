@@ -5,7 +5,7 @@ new jobs. It isolates preferences, limits threads and enforces subprocess deadli
 The direct calls below remain available for existing automation. All output paths
 must be external to every Git checkout.
 
-Use Blender-Sith through Blender's normal UI for scene inspection, or run a fresh background Blender process for repeatable export checks. An MCP connection can drive the same Python API when interactive inspection is useful; this fork does not require or install an MCP server.
+Use Blender-Sith through Blender's normal UI for scene inspection, or run a fresh background Blender process for repeatable export checks. The optional [local MCP companion](MCP.md) provides structured 3DO inspection, geometry conversion, regression and packaging tools. It starts fresh background jobs and requires explicit runtime and file-root configuration; the Blender extension does not install or require it.
 
 ## Run the synthetic checks
 

@@ -191,7 +191,7 @@ def main(argv=None):
                                     args.bpy_site.resolve() if args.bpy_site else None), encoding="utf-8")
         executable = args.blender or args.python
         resolved = shutil.which(executable) or executable
-        command = ([resolved, "--background", "--factory-startup", "--threads", str(args.threads),
+        command = ([resolved, "--background", "--factory-startup", "--offline-mode", "--threads", str(args.threads),
                     "--python-exit-code", "1", "--python", str(wrapper)] if args.blender
                    else [resolved, "-B", str(wrapper)])
         process = None
