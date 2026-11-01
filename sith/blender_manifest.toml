@@ -17,5 +17,7 @@ copyright = [
     "2019-2026 Crt Vavros"
 ]
 
+platforms = ["macos-arm64"]
+
 [permissions]
 files = "Import/export 3DO, MAT and KEY files"
