@@ -8,4 +8,6 @@ or native Python with an existing compatible bpy installation.
 
 See [build and Windows commands](docs/platform-builds.md) and the
 [fork audit and attribution](docs/fork-audit-2026-11-01.md). Add-on Python files
-are identical across both platform branches.
+are identical across all platform branches.
+
+The optional [Sith MCP companion](docs/MCP.md) supplies structured format and release tools. General Blender automation is covered by [Blender Lab alignment](docs/blender-alignment.md).
