@@ -105,6 +105,31 @@ class BuildExtensionTests(unittest.TestCase):
                 self.write_manifest(platforms)
                 self.build(self.root / expected, expected)
 
+    def test_macos_archive_names_and_receipts_match_manifest_scope(self):
+        cases = [(["macos-arm64"], "macos-arm64"),
+                 (["macos-x64"], "macos-x64"),
+                 (["macos-arm64", "macos-x64"], "macos-universal"),
+                 (["macos-x64", "macos-arm64"], "macos-universal")]
+        for index, (platforms, expected) in enumerate(cases):
+            with self.subTest(platforms=platforms):
+                self.write_manifest(platforms)
+                archive, receipt = self.build(self.root / str(index), expected)
+                self.assertEqual(receipt["platform"], expected)
+                self.assertEqual(receipt["archive"]["name"], archive.name)
+                with zipfile.ZipFile(archive) as package:
+                    self.assertEqual(package.read("blender_manifest.toml"),
+                                     (self.addon / "blender_manifest.toml").read_bytes())
+
+    def test_omitted_empty_or_mixed_platforms_keep_universal_name(self):
+        cases = [None, [], ["linux-x64", "macos-arm64"],
+                 ["windows-x64", "macos-x64"],
+                 ["linux-x64", "windows-x64", "macos-arm64", "macos-x64"]]
+        for index, platforms in enumerate(cases):
+            with self.subTest(platforms=platforms):
+                self.write_manifest(platforms)
+                _, receipt = self.build(self.root / str(index))
+                self.assertEqual(receipt["platform"], "universal")
+
     def test_long_and_unicode_paths_with_spaces(self):
         nested = self.addon / ("long module directory " + "x" * 65) / "démo files"
         nested.mkdir(parents=True)
@@ -169,8 +194,11 @@ class BuildExtensionTests(unittest.TestCase):
                 path.write_bytes(original)
 
     def test_invalid_manifest_cannot_control_archive_path(self):
-        for platforms, version in [(["macos-arm64"], "1.2.3"), (None, "../outside"),
-                                   ("linux-x64", "1.2.3")]:
+        for platforms, version in [(["unknown-platform"], "1.2.3"), (None, "../outside"),
+                                   ("linux-x64", "1.2.3"),
+                                   (["macos-arm64", "macos-arm64"], "1.2.3"),
+                                   (["macos-universal"], "1.2.3"),
+                                   (["macos-arm64", 1], "1.2.3")]:
             with self.subTest(platforms=platforms, version=version):
                 self.write_manifest(platforms, version)
                 output = self.root / "invalid"

@@ -89,12 +89,18 @@ def _manifest_identity(data: bytes) -> tuple[str, str]:
     ):
         raise ValueError("Manifest version must be a safe semantic version")
     platforms = manifest.get("platforms", [])
-    supported = {"linux-x64", "windows-x64"}
+    macos_platforms = {"macos-arm64", "macos-x64"}
+    supported = {"linux-x64", "windows-x64"} | macos_platforms
     if (not isinstance(platforms, list) or
             any(not isinstance(item, str) or item not in supported for item in platforms) or
             len(set(platforms)) != len(platforms)):
-        raise ValueError("Manifest platforms must contain linux-x64 and/or windows-x64")
-    platform = platforms[0] if len(platforms) == 1 else "universal"
+        raise ValueError("Manifest platforms must be unique values from: " + ", ".join(sorted(supported)))
+    if len(platforms) == 1:
+        platform = platforms[0]
+    elif set(platforms) == macos_platforms:
+        platform = "macos-universal"
+    else:
+        platform = "universal"
     return version, platform
 
 
