@@ -275,6 +275,94 @@ def main():
         assert tuple(key.nodes[0].keyframes[-1].position) == (1,2,3)
         return {"type": "FFFF", "joints": 1, "frames": [0,10], "last_position": [1,2,3]}
 
+    def key_zero_coordinates():
+        """A nonzero coordinate returning to zero must not retain the prior value."""
+        from mathutils import Quaternion
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end, scene.render.fps = 0, 2, 30
+        scene.sith_key_types = 'FFFF'
+        results = []
+        for mode in ('YXZ', 'QUATERNION'):
+            obj = mesh_object('zero_' + mode.lower(), [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
+            obj.rotation_mode = mode
+            for frame, value in ((0,0.0), (1,1.0), (2,0.0)):
+                obj.location = (value, value, value)
+                obj.keyframe_insert(data_path='location', frame=frame)
+                if mode == 'QUATERNION':
+                    obj.rotation_quaternion = Quaternion((1.0,0.0,0.0), value)
+                    obj.keyframe_insert(data_path='rotation_quaternion', frame=frame)
+                else:
+                    obj.rotation_euler = (value,0.0,0.0)
+                    obj.keyframe_insert(data_path='rotation_euler', frame=frame)
+            path = output / ('key_zero_' + mode.lower() + '.key')
+            addon.exportKey(obj, scene, str(path))
+            key = keyloader.loadKey(path)
+            last = key.nodes[0].keyframes[-1]
+            assert max(abs(v) for v in last.position) < 1e-7, tuple(last.position)
+            assert max(abs(v) for v in last.orientation) < 1e-5, tuple(last.orientation)
+            prior = key.nodes[0].keyframes[-2]
+            assert tuple(prior.deltaPosition) == (-1.0,-1.0,-1.0)
+            results.append({'rotation_mode':mode,'final_position':list(last.position),'final_pyr':list(last.orientation)})
+        return {'returns_to_zero':results}
+
+    def key_quaternion_turns():
+        """Quaternion-to-Euler wrap must not turn a short native interval backwards."""
+        import math
+        from mathutils import Quaternion
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end, scene.render.fps = 0, 36, 30
+        scene.sith_key_types = 'FFFF'
+        results = []
+        # Native PYR axes correspond to Blender X, Z, Y respectively.
+        for axis, blender_axis in enumerate(((1,0,0),(0,0,1),(0,1,0))):
+            obj = mesh_object('turn_' + str(axis), [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
+            obj.rotation_mode = 'QUATERNION'
+            for frame in range(37):
+                obj.location = (0.0,0.0,0.0)
+                obj.keyframe_insert(data_path='location', frame=frame)
+                obj.rotation_quaternion = Quaternion(blender_axis, math.radians(frame * 20.0))
+                obj.keyframe_insert(data_path='rotation_quaternion', frame=frame)
+            path = output / ('key_turn_' + str(axis) + '.key')
+            addon.exportKey(obj, scene, str(path))
+            key = keyloader.loadKey(path)
+            frames = key.nodes[0].keyframes
+            worst = 0.0
+            for frame, kf in enumerate(frames):
+                want = [0.0,0.0,0.0]
+                want[axis] = frame * 20.0
+                worst = max(worst, *(abs(a-b) for a,b in zip(kf.orientation,want)))
+                assert worst < 0.001, (axis,frame,tuple(kf.orientation),want)
+                if frame == len(frames)-1:
+                    continue
+                # Evaluate stored native differentials at non-keyed times.
+                for fraction in (0.25,0.5,0.75):
+                    want[axis] = (frame+fraction)*20.0
+                    interpolated = [a+d*fraction for a,d in zip(kf.orientation,kf.deltaRotation)]
+                    assert max(abs(a-b) for a,b in zip(interpolated,want)) < 0.001
+            results.append({'axis_pyr':axis,'authored_degrees':720,'worst_degrees':worst})
+        return {'continuous_turns':results}
+
+    def key_explicit_euler_winding():
+        """Explicit Euler winding remains authored even across a sparse full turn."""
+        import math
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end, scene.render.fps = 0, 1, 30
+        scene.sith_key_types = 'FFFF'
+        obj = mesh_object('euler_winding', [(0,0,0),(1,0,0),(0,1,0)], [(0,1,2)])
+        obj.rotation_mode = 'YXZ'
+        for frame, degrees in ((0,0.0),(1,720.0)):
+            obj.location = (0.0,0.0,0.0)
+            obj.keyframe_insert(data_path='location', frame=frame)
+            obj.rotation_euler = (0.0,0.0,math.radians(degrees))
+            obj.keyframe_insert(data_path='rotation_euler', frame=frame)
+        path = output / 'key_euler_winding.key'
+        addon.exportKey(obj, scene, str(path))
+        key = keyloader.loadKey(path)
+        frames = key.nodes[0].keyframes
+        assert abs(frames[-1].orientation[1]-720.0) < 0.001
+        assert abs(frames[0].deltaRotation[1]-720.0) < 0.001
+        return {'final_yaw':frames[-1].orientation[1],'yaw_delta':frames[0].deltaRotation[1]}
+
     def material_name_delimiters():
         # Whitespace-based consumers need index and filename as separate fields,
         # including names that fill or exceed the writer's alignment width.
@@ -354,6 +442,9 @@ def main():
         check("hierarchy_and_offset", hierarchy)
         check("hex_metadata", metadata)
         check("animated_key_roundtrip", key_roundtrip)
+        check("key_zero_coordinates", key_zero_coordinates)
+        check("key_quaternion_turns", key_quaternion_turns)
+        check("key_explicit_euler_winding", key_explicit_euler_winding)
         check("material_name_delimiters", material_name_delimiters)
         check("indexed_mat_cels_with_palette", lambda: indexed_mat_cels(True))
         check("indexed_mat_cels_without_palette", lambda: indexed_mat_cels(False))
