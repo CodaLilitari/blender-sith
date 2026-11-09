@@ -1,4 +1,4 @@
-> **Community fork: Blender-Sith Agentic.** Preserves upstream, Coda's corner-normal/metadata fixes, and credited contributor fixes in the [2026-11-01 audit](docs/fork-audit-2026-11-01.md). Version 1.0.2 adds corrected MAT cel reading, reproducible extension packages, and bounded background validation. Use **linux-agentic**, **windows**, or **macos** and read [platform builds](docs/platform-builds.md), [limitations](FORK.md), and [agent/CLI usage](docs/agent-use.md). The optional [MCP companion](docs/MCP.md) adds structured inspection, geometry conversion, regression and packaging tools. Mac packages have not been tested on a native Mac. Original Blender-Sith authorship and GPL history are retained below.
+> **Community fork: Blender-Sith Agentic.** Release **v1.0.3-coda.2** packages extension **1.0.3** for Windows x64, Linux x64, macOS arm64 and universal Python use. Download from [GitHub](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) or [GitLab](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2), then follow the [install route and platform scope](docs/platform-builds.md#latest-install-route). The fork preserves upstream, Coda's corner-normal/metadata fixes, and credited contributor fixes in the [2026-11-01 audit](docs/fork-audit-2026-11-01.md); 1.0.3 also corrects KEY zero coordinates and quaternion turn continuity. The exact packages passed 16 synthetic checks on Windows, Linux and native Apple Silicon macOS; see the [runtime matrix](docs/release-1.0.3-coda.2.md) for versions and scope. Read [limitations](FORK.md) and [agent/CLI usage](docs/agent-use.md). The optional [MCP companion](docs/MCP.md) adds structured inspection, geometry conversion, regression and packaging tools; ordinary Blender installation does not require it. Original Blender-Sith authorship and GPL history are retained below.
 
 <div align="center">
 
@@ -88,7 +88,7 @@
 
 ## ⚡ Quick Start
 
-1. **Install**: Download from [Releases](https://github.com/smlu/blender-sith/releases) and install via Blender Extensions
+1. **Install**: Download the matching extension ZIP from [GitHub v1.0.3-coda.2](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) or [GitLab v1.0.3-coda.2](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2), then use Blender 5.0+ Preferences > Add-ons > Install from Disk. See [platform builds](docs/platform-builds.md#latest-install-route).
 2. **Import Model**: `File > Import > Sith Game Engine 3D Model (.3do)`
 3. **Import Textures**: Use MAT Directory option or let auto-search find them
 4. **Import Animation**: `File > Import > Sith Game Engine Animation (.key)`
@@ -111,7 +111,7 @@
 
 ### Method 1: From Release (Recommended)
 
-1. 📥 **Download** the latest ZIP from the [Releases](https://github.com/smlu/blender-sith/releases) page
+1. 📥 **Download** the latest ZIP from the [fork release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) page
 2. 🔧 **Open Blender** and go to `Edit > Preferences > Add-ons`
 3. 📂 **Install**: Click the dropdown menu (▼) at the top-right and select `Install from Disk...`
 4. 📁 **Select** the downloaded ZIP file
@@ -160,7 +160,7 @@ Contributions are welcome! Feel free to:
 
 ##  Links
 
-- 📦 [Releases](https://github.com/smlu/blender-sith/releases) - Download the latest version
+- 📦 [fork release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) - Download the latest version
 - 🐛 [Issue Tracker](https://github.com/smlu/blender-sith/issues) - Report bugs or request features
 - 🌐 [Blender.org](https://www.blender.org/) - Get Blender
 

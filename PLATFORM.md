@@ -1,13 +1,13 @@
-# Linux agent edition
+# Linux x64 edition
 
-This branch builds the Linux x64 Blender-Sith 1.0.2 extension. It preserves the
-shared upstream and contributor fixes. Use `scripts/run_regression.sh` with an
-explicit Blender executable and a fresh external output directory. The default
-is a fresh background job, isolated preferences, two threads and a 300-second
-deadline. Receipts include exact source hashes and completed regression results.
+This branch packages Blender-Sith extension **1.0.3** for `linux-x64` in
+distribution release **v1.0.3-coda.2**. It shares the common implementation,
+including the current KEY export fixes, with all platform branches.
 
-See [build and agent commands](docs/platform-builds.md) and the
-[fork audit and attribution](docs/fork-audit-2026-11-01.md). The matching Windows
-branch is `windows`; add-on Python files are identical across both branches.
-
-The optional [Sith MCP companion](docs/MCP.md) supplies structured format and release tools. General Blender automation is covered by [Blender Lab alignment](docs/blender-alignment.md).
+See [installation and platform builds](docs/platform-builds.md), the
+[exact release validation](docs/release-1.0.3-coda.2.md), and the
+[fork attribution and limitations](FORK.md). Download the installable extension
+ZIP from [GitHub](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2)
+or [GitLab](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2).
+These packages do not include Blender itself. Background validation is distinct
+from interactive installation and game-runtime acceptance.
