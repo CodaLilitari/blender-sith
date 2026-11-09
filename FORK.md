@@ -2,7 +2,7 @@
 
 A focused community fork of [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith), based on upstream commit [`ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`](https://github.com/smlu/blender-sith/commit/ecc90131bcfdeabd400225e8a72ce94cbff1ec5c). The original Git history, copyright notices and GPL-3.0-or-later license are retained. Fork changes were developed by Coda in collaboration with Andrei for the JK/MotS Model Workshop.
 
-Current platform-branch extension version: `1.0.2`, display name: **Blender Sith (Coda)**. The earlier `v1.0.1-coda.1` release is retained. The extension ID remains `sith`, so use it as an alternative to the upstream extension rather than installing both in the same Blender extension repository. See [platform build instructions](docs/platform-builds.md).
+Current extension version: `1.0.3`, display name: **Blender Sith (Coda)**; distribution release: `v1.0.3-coda.2`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
 
 Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
 
@@ -24,19 +24,25 @@ the importer now consumes each cel's mip bytes before reading the next cel.
 Placeholder dimensions and transparency metadata stay intact, and truncated
 skipped data raises an error. Palette-present decoding remains unchanged.
 
-The same add-on code serves Linux, Windows and macOS. Platform branches specialize
-their extension manifest and quick-start guide; they do not fork the format
-implementation. Packaging is deterministic and includes the original GPL
+The same add-on code serves Windows x64, Linux x64, macOS arm64 and the universal
+Python package. Platform editions specialize their extension manifest; they do
+not fork the format implementation. Packaging is deterministic and includes the original GPL
 license. The bounded regression launcher isolates Blender preferences, limits
 threads by default, records hashes and results, and refuses output inside Git
 checkouts. These are workflow and resource improvements, not measured renderer
-speedups. The current synthetic matrix has 13 checks; the ten-check results
-below remain the historical baseline.
+speedups. The current synthetic matrix has 16 checks, including three additional
+KEY checks for coordinates returning to zero, continuous quaternion turns and
+explicit Euler winding. The ten-check results below and the 13-check matrix from
+the [2026-11-01 audit](docs/fork-audit-2026-11-01.md) remain historical evidence.
 
-The macOS ZIP declares Apple Silicon support in its manifest, but has
-not undergone native macOS execution or installation testing. Linux and Windows
-packages have native Blender 5.1.2 background test evidence; the exact Linux package also passes all 13 checks under Blender 5.2.3 LTS. See release build
-notes for the exact package hashes, runtime matrix and MCP protocol checks.
+The earlier 1.0.2 platform record reports native Linux and Windows Blender 5.1.2
+background results, and all 13 checks passing for its exact Linux package under
+Blender 5.2.3 LTS. Those results do not validate a new release artifact. The
+`v1.0.3-coda.2` release records the package hashes, runtime matrix and MCP protocol
+checks separately. Its macOS ZIP declares Apple Silicon in the manifest; native
+macOS execution and interactive installation are not yet established by this
+release documentation. A Linux run of that Python payload is not a native Mac
+pass.
 
 ### Preserve the normals Blender actually displays
 
@@ -55,6 +61,10 @@ The read is based on Blender's [documented corner-normal representation](https:/
 Unset properties now expose their declared defaults: KEY high-priority node types are `FFFF`, hierarchy node type is `01`, and unspecified node flags are zero. This is an intentional behavior correction; previously the custom getter returned an empty string even when a default was declared. Saved explicit values remain explicit. Direct writes to Blender's raw ID-property dictionary bypass the setter, so use the registered properties in scripts.
 
 ## Validation
+
+The current suite has 16 synthetic checks. Consult the `v1.0.3-coda.2` release
+results for runs against its exact packages; the retained comparison below is
+the historical ten-check baseline, not a claim that only ten checks remain.
 
 Run [the background regression suite](docs/agent-use.md). It creates synthetic geometry and a small animation, exports files and parses them back. It needs no commercial game data, model assets or network. Retained machine-readable results are [upstream](tests/evidence/upstream-bpy-5.1.2.json) and [fork candidate](tests/evidence/coda-bpy-5.1.2.json); both record the same harness hash and their exact source hashes.
 

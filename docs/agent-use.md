@@ -9,6 +9,13 @@ Use Blender-Sith through Blender's normal UI for scene inspection, or run a fres
 
 ## Run the synthetic checks
 
+The current `1.0.3` extension harness contains 16 synthetic checks. The
+`v1.0.3-coda.2` distribution uses that extension version across Windows x64,
+Linux x64, macOS arm64 and universal ZIPs; see the
+[release downloads and install route](platform-builds.md#latest-install-route).
+A platform package or a result from another operating system is not a native
+runtime pass. Native macOS evidence for this release is still pending.
+
 From the repository root, using a supported Blender executable:
 
 ```text
@@ -38,11 +45,15 @@ python tests/background_regression.py --addon /path/to/upstream/sith --output /e
 ```
 
 The retained historical ten-check harness returned four passes and six failures
-for the audited base `ecc90131`. The current harness adds three material checks,
-so those historical totals are not its expected result. Passing controls cover
-smooth geometry, UV/material/color channels, hierarchy, and animated KEY output.
-The original failing checks exercise the normal and hexadecimal-metadata fixes.
-An upstream nonzero exit is a failing test result, not an export certification.
+for the audited base `ecc90131`. The 2026-11-01 audit expanded coverage to 13
+checks by adding material-name separation and indexed MAT cels with and without
+a palette. The current 16-check harness also checks KEY coordinates returning
+to zero, continuous quaternion turns, and explicit Euler winding. Those older
+totals remain evidence for their recorded harness and source, not the expected
+result of the current suite. Passing controls cover smooth geometry,
+UV/material/color channels, hierarchy, and animated KEY output. The original
+failing checks exercise the normal and hexadecimal-metadata fixes. An upstream
+nonzero exit is a failing test result, not an export certification.
 
 ## Export a prepared model with a short script
 
