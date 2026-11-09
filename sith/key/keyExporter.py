@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import bpy, mathutils, os.path
+import math
 from . import keyWriter
 from collections import defaultdict, OrderedDict
 
@@ -142,7 +143,11 @@ def _make_key_from_obj(key_name: str, obj: bpy.types.Object, scene: bpy.types.Sc
                 prev_co = None
                 for frame, co in fcdp.items():
                     # Fill missing coordinate
-                    co = [co[i] or (prev_co[i] if prev_co else 0.0) for i in range(len(co))] # If co[i] is None set to previous coordinate if available, otherwise 0.0
+                    # Fill only absent axes; an explicitly keyed zero is a value.
+                    co = [
+                        co[i] if co[i] is not None else (prev_co[i] if prev_co else 0.0)
+                        for i in range(len(co))
+                    ]
                     kfs.setdefault(frame, {})[data_path] = co # assign co to kfs[frame][data_path]
                     prev_co = co
 
@@ -190,7 +195,18 @@ def _make_key_from_obj(key_name: str, obj: bpy.types.Object, scene: bpy.types.Sc
                 # Set orientation
                 if "rotation_quaternion" in entry:
                     orient = mathutils.Quaternion(entry["rotation_quaternion"])
-                    kf.orientation = quaternionToPYR(orient)
+                    if previous_kf:
+                        # Choose the equivalent Euler representation nearest to the
+                        # preceding KEY sample. Wrapped PYR values would otherwise
+                        # generate a long backwards delta across a +/-180 boundary.
+                        prior = previous_kf.orientation
+                        compatible = mathutils.Euler(
+                            (math.radians(prior[0]), math.radians(prior[2]), math.radians(prior[1])),
+                            kImEulerOrder,
+                        )
+                        kf.orientation = eulerToPYR(orient.normalized().to_euler(kImEulerOrder, compatible))
+                    else:
+                        kf.orientation = quaternionToPYR(orient)
                 elif 'rotation_euler' in entry:
                     euler = mathutils.Euler(entry["rotation_euler"], cobj.rotation_mode)
                     kf.orientation = eulerToPYR(euler)
