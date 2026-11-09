@@ -1,13 +1,13 @@
-# Windows edition
+# Windows x64 edition
 
-This branch builds the Windows x64 Blender-Sith 1.0.2 extension. It preserves the
-same upstream and contributor fixes as `linux-agentic`. Install the built ZIP
-through Blender Preferences > Add-ons > Install from Disk. For reproducible
-validation, `scripts/run_regression.ps1` supports an explicit Blender executable
-or native Python with an existing compatible bpy installation.
+This branch packages Blender-Sith extension **1.0.3** for `windows-x64` in
+distribution release **v1.0.3-coda.2**. It shares the common implementation,
+including the current KEY export fixes, with all platform branches.
 
-See [build and Windows commands](docs/platform-builds.md) and the
-[fork audit and attribution](docs/fork-audit-2026-11-01.md). Add-on Python files
-are identical across all platform branches.
-
-The optional [Sith MCP companion](docs/MCP.md) supplies structured format and release tools. General Blender automation is covered by [Blender Lab alignment](docs/blender-alignment.md).
+See [installation and platform builds](docs/platform-builds.md), the
+[exact release validation](docs/release-1.0.3-coda.2.md), and the
+[fork attribution and limitations](FORK.md). Download the installable extension
+ZIP from [GitHub](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2)
+or [GitLab](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2).
+These packages do not include Blender itself. Background validation is distinct
+from interactive installation and game-runtime acceptance.
