@@ -1,5 +1,13 @@
 # macOS Apple Silicon edition
 
-This branch packages Blender-Sith 1.0.2 for `macos-arm64`, using the same Python add-on as Linux and Windows. Native macOS execution and installation have not been tested. Official Intel Mac Blender ends at 4.5 LTS, below the extension's Blender 5.0 minimum.
+This branch packages Blender-Sith extension **1.0.3** for `macos-arm64` in
+distribution release **v1.0.3-coda.2**. It shares the common implementation,
+including the current KEY export fixes, with all platform branches.
 
-See [platform builds](docs/platform-builds.md), [MCP companion](docs/MCP.md), and [Blender alignment](docs/blender-alignment.md). The ZIP is an add-on, not a Blender executable.
+See [installation and platform builds](docs/platform-builds.md), the
+[exact release validation](docs/release-1.0.3-coda.2.md), and the
+[fork attribution and limitations](FORK.md). Download the installable extension
+ZIP from [GitHub](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2)
+or [GitLab](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2).
+These packages do not include Blender itself. Background validation is distinct
+from interactive installation and game-runtime acceptance.

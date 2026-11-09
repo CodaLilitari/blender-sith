@@ -1,11 +1,39 @@
-# Linux, Windows and macOS packages
+# Windows, Linux, macOS and universal packages
 
-Blender-Sith is a Python extension, not a custom Blender executable. The
-`linux-agentic`, `windows` and `macos` branches share the same format implementation
-and tests. Their manifests select `linux-x64`, `windows-x64`, or
-`macos-arm64` respectively.
-All use extension ID `sith` and version `1.0.2`; install one edition in a given
-Blender extension repository.
+Blender-Sith is a Python extension, not a custom Blender executable. Release
+`v1.0.3-coda.2` uses extension ID `sith`, extension version `1.0.3`, and display
+name **Blender Sith (Coda)**. The release suffix identifies the distribution;
+it does not change the version in Blender's extension manifest. Install one
+edition in a given Blender extension repository.
+
+## Latest install route
+
+For `v1.0.3-coda.2`, download the appropriate extension ZIP from the
+[GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2)
+or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2).
+Choose a named extension asset, rather than the hosting service's source-code ZIP:
+
+| Platform | Extension ZIP | Manifest restriction |
+| --- | --- | --- |
+| Windows x64 | `sith-1.0.3-windows-x64.zip` | `windows-x64` |
+| Linux x64 | `sith-1.0.3-linux-x64.zip` | `linux-x64` |
+| macOS Apple Silicon | `sith-1.0.3-macos-arm64.zip` | `macos-arm64` |
+| Universal Python package | `sith-1.0.3-universal.zip` | No platform restriction |
+
+The four editions share the format implementation and tests. The universal ZIP
+contains the same Python extension without a platform restriction; it is not a
+compiled universal Blender binary or evidence of testing on every architecture.
+Use the release's package receipts and validation results to check the exact
+artifact and runtime tested. The exact Mac ZIP passed native Apple Silicon
+validation on macOS 15.8.2 with Blender 5.2.3 LTS: all 16 synthetic checks and
+all 52 unit tests passed. See the [release validation record](release-1.0.3-coda.2.md)
+and [successful native workflow](https://github.com/CodaLilitari/blender-sith/actions/runs/42592772833).
+
+In Blender 5.0+, open Preferences > Add-ons > Install from Disk and select the
+extension ZIP. The extension ID is also used by upstream Blender-Sith, so replace
+or disable the previous edition in that extension repository before using this
+one. The optional [MCP companion](MCP.md) is separate and is not required for
+ordinary Blender installation.
 
 ## Build an installable ZIP
 
@@ -21,10 +49,12 @@ python3 /path/to/blender-sith/scripts/build_extension.py --output-dir /tmp/sith-
 python C:\src\blender-sith\scripts\build_extension.py --output-dir C:\builds\sith-package
 ```
 
-The result is `sith-1.0.2-linux-x64.zip`, `sith-1.0.2-windows-x64.zip`, or
-`sith-1.0.2-macos-arm64.zip`, with a companion `.receipt.json` containing
-archive SHA-256 and per-file raw/packaged SHA-256 values. The common branch
-without a platform restriction builds a universal package. The ZIP contains
+The packager reads `sith/blender_manifest.toml` from the selected source tree.
+A source with no `platforms` entry builds `sith-1.0.3-universal.zip`; a source
+restricted to `linux-x64`, `windows-x64`, or `macos-arm64` builds the corresponding
+named ZIP in the table above. Use `--source-dir /path/to/source` to select another
+explicit source tree. A companion `.receipt.json` records the archive SHA-256
+and per-file raw/packaged SHA-256 values. The ZIP contains
 `blender_manifest.toml`, `__init__.py`, source subpackages and `LICENSE` at the
 extension root. Only add-on Python/TOML source and the license are packaged.
 Unknown files under the add-on root fail the build instead of silently disappearing;
@@ -34,10 +64,11 @@ LF normalization, stable ordering, fixed timestamps and uncompressed ZIP
 members make bytes reproducible across operating systems. Existing packages
 and receipts are never overwritten.
 
-In Blender 5.0+, use Preferences > Add-ons > Install from Disk and select the
-ZIP. The release build notes identify the exact runtime versions and package
-hashes exercised. Automated validation does not establish interactive installation
-or every Blender-version behavior.
+The current regression suite has 16 synthetic checks. Release validation must
+identify the exact runtime versions and package hashes exercised; older 10- or
+13-check reports remain historical evidence for their recorded source. Automated
+validation does not establish interactive installation or every Blender-version
+behavior.
 
 ## Linux agent workflow
 
@@ -87,11 +118,18 @@ separate, as described in [FORK.md](../FORK.md).
 The Mac ZIP contains the same Python add-on as the Linux and Windows editions,
 with Apple Silicon listed in its manifest. It does not contain
 a Blender executable or compiled universal binary. Packaging and source equivalence
-are checked, but native macOS installation and execution have not been tested.
-Linux execution of its Python payload is a source check, not a macOS runtime check.
+are separate from native execution. This release's native ARM64 macOS run passed
+official extension validation and all 16 synthetic checks using the exact ZIP.
+Interactive installation, viewport use and game playback remain separate checks.
 Official Intel Mac builds end at Blender 4.5 LTS, below this add-on's Blender 5.0
 minimum. Supporting Intel would require a separately validated custom Blender 5+
 build; the Mac release does not claim that support. See [Blender alignment](blender-alignment.md).
 
 The optional [MCP companion](MCP.md) is distributed separately from the extension
 ZIPs. Blender users do not need the MCP SDK to install the add-on.
+
+To repeat native Mac validation, manually dispatch **Native platform validation**
+on the common `master` branch in GitHub Actions. It uses the standard `macos-15`
+ARM64 runner, verifies the official Blender 5.2.3 LTS download, and retains the
+package, receipts and logs. The job has no release-publishing step and only runs
+in a public repository. It does not run automatically on pushes or tags.
