@@ -38,11 +38,12 @@ the [2026-11-01 audit](docs/fork-audit-2026-11-01.md) remain historical evidence
 The earlier 1.0.2 platform record reports native Linux and Windows Blender 5.1.2
 background results, and all 13 checks passing for its exact Linux package under
 Blender 5.2.3 LTS. Those results do not validate a new release artifact. The
-`v1.0.3-coda.2` release records the package hashes, runtime matrix and MCP protocol
-checks separately. Its macOS ZIP declares Apple Silicon in the manifest; native
-macOS execution and interactive installation are not yet established by this
-release documentation. A Linux run of that Python payload is not a native Mac
-pass.
+`v1.0.3-coda.2` [release record](docs/release-1.0.3-coda.2.md) provides the exact
+package hashes and runtime matrix. Its Mac ZIP passed native ARM64 macOS 15.8.2
+execution under Blender 5.2.3 LTS, including all 16 synthetic checks and official
+extension validation. Interactive installation, game playback and multiplayer
+remain separate acceptance checks. Optional MCP unit tests are part of the
+52-test suite; this release does not add a live MCP-client integration claim.
 
 ### Preserve the normals Blender actually displays
 

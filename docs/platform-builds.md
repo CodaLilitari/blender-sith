@@ -24,8 +24,10 @@ The four editions share the format implementation and tests. The universal ZIP
 contains the same Python extension without a platform restriction; it is not a
 compiled universal Blender binary or evidence of testing on every architecture.
 Use the release's package receipts and validation results to check the exact
-artifact and runtime tested. Native macOS validation for this release is pending;
-the package's manifest alone does not establish it.
+artifact and runtime tested. The exact Mac ZIP passed native Apple Silicon
+validation on macOS 15.8.2 with Blender 5.2.3 LTS: all 16 synthetic checks and
+all 52 unit tests passed. See the [release validation record](release-1.0.3-coda.2.md)
+and [successful native workflow](https://github.com/CodaLilitari/blender-sith/actions/runs/42592772833).
 
 In Blender 5.0+, open Preferences > Add-ons > Install from Disk and select the
 extension ZIP. The extension ID is also used by upstream Blender-Sith, so replace
@@ -116,13 +118,18 @@ separate, as described in [FORK.md](../FORK.md).
 The Mac ZIP contains the same Python add-on as the Linux and Windows editions,
 with Apple Silicon listed in its manifest. It does not contain
 a Blender executable or compiled universal binary. Packaging and source equivalence
-are separate from native execution. A native macOS pass for `v1.0.3-coda.2` is not
-yet established; consult the release's completed validation results before making
-that claim. Linux execution of its Python payload is a source check, not a macOS
-runtime check. Interactive installation is also a separate check.
+are separate from native execution. This release's native ARM64 macOS run passed
+official extension validation and all 16 synthetic checks using the exact ZIP.
+Interactive installation, viewport use and game playback remain separate checks.
 Official Intel Mac builds end at Blender 4.5 LTS, below this add-on's Blender 5.0
 minimum. Supporting Intel would require a separately validated custom Blender 5+
 build; the Mac release does not claim that support. See [Blender alignment](blender-alignment.md).
 
 The optional [MCP companion](MCP.md) is distributed separately from the extension
 ZIPs. Blender users do not need the MCP SDK to install the add-on.
+
+To repeat native Mac validation, manually dispatch **Native platform validation**
+on the common `master` branch in GitHub Actions. It uses the standard `macos-15`
+ARM64 runner, verifies the official Blender 5.2.3 LTS download, and retains the
+package, receipts and logs. The job has no release-publishing step and only runs
+in a public repository. It does not run automatically on pushes or tags.
