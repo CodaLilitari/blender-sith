@@ -86,7 +86,8 @@ def validate_native_result(receipt, report):
     tests = report.get("tests", [])
     if (receipt.get("status") != "passed" or receipt.get("source_unchanged") is not True
             or platform_info != {"system": "Darwin", "machine": "arm64"}
-            or runtime.get("route") != "blender" or runtime.get("blender") != BLENDER_VERSION
+            or runtime.get("route") != "blender"
+            or runtime.get("blender") not in (BLENDER_VERSION, BLENDER_VERSION + " LTS")
             or receipt.get("regression") != {"passed": EXPECTED_TESTS, "failed": 0, "addon_source_unchanged": True}
             or report.get("passed") != EXPECTED_TESTS or report.get("failed") != 0
             or len(tests) != EXPECTED_TESTS or any(t.get("passed") is not True for t in tests)):
