@@ -24,8 +24,8 @@ The four editions share the format implementation and tests. The universal ZIP
 contains the same Python extension without a platform restriction; it is not a
 compiled universal Blender binary or evidence of testing on every architecture.
 Use the release's package receipts and validation results to check the exact
-artifact and runtime tested. The 1.0.4 candidate is being validated against its
-exact ZIPs; its [release record](release-1.0.4-coda.1.md) records current results.
+artifact and runtime tested. The exact 1.0.4 packages passed 29 synthetic checks on Windows, Linux and
+Apple Silicon; its [release record](release-1.0.4-coda.1.md) identifies the runtimes and scope.
 The earlier [1.0.3 validation](release-1.0.3-coda.2.md) remains historical.
 
 In Blender 5.0+, open Preferences > Add-ons > Install from Disk and select the
@@ -126,8 +126,9 @@ build; the Mac release does not claim that support. See [Blender alignment](blen
 The optional [MCP companion](MCP.md) is distributed separately from the extension
 ZIPs. Blender users do not need the MCP SDK to install the add-on.
 
-To repeat native Mac validation, manually dispatch **Native platform validation**
+To repeat native Mac and Linux validation, manually dispatch **Native platform validation**
 on the common `master` branch in GitHub Actions. It uses the standard `macos-15`
-ARM64 runner, verifies the official Blender 5.2.3 LTS download, and retains the
-package, receipts and logs. The job has no release-publishing step and only runs
+ARM64 runner with Blender 5.2.3 LTS and standard `ubuntu-24.04` x86_64 with
+Blender 5.1.2. Both jobs verify official download checksums and retain exact
+packages, receipts and logs. Linux validates all four package schemas. The job has no release-publishing step and only runs
 in a public repository. It does not run automatically on pushes or tags.

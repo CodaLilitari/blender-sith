@@ -2,7 +2,7 @@
 
 A focused community fork of [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith), based on upstream commit [`ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`](https://github.com/smlu/blender-sith/commit/ecc90131bcfdeabd400225e8a72ce94cbff1ec5c). The original Git history, copyright notices and GPL-3.0-or-later license are retained. Fork changes were developed by Coda in collaboration with Andrei for the JK/MotS Model Workshop.
 
-Current extension version: `1.0.4`, display name: **Blender Sith (Coda)**; distribution release candidate: `v1.0.4-coda.1`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
+Current extension version: `1.0.4`, display name: **Blender Sith (Coda)**; distribution release: `v1.0.4-coda.1`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
 
 Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
 
@@ -45,8 +45,8 @@ not fork the format implementation. Packaging is deterministic and includes the 
 license. The bounded regression launcher isolates Blender preferences, limits
 threads by default, records hashes and results, and refuses output inside Git
 checkouts. These are workflow and resource improvements, not measured renderer
-speedups. The current synthetic matrix has 16 checks, including three additional
-KEY checks for coordinates returning to zero, continuous quaternion turns and
+speedups. The current synthetic matrix has 29 checks, including native radius/pivot
+regressions and the retained KEY checks for coordinates returning to zero, continuous quaternion turns and
 explicit Euler winding. The ten-check results below and the 13-check matrix from
 the [2026-11-01 audit](docs/fork-audit-2026-11-01.md) remain historical evidence.
 
@@ -58,7 +58,8 @@ package hashes and runtime matrix. Its Mac ZIP passed native ARM64 macOS 15.8.2
 execution under Blender 5.2.3 LTS, including all 16 synthetic checks and official
 extension validation. Interactive installation, game playback and multiplayer
 remain separate acceptance checks. Optional MCP unit tests are part of the
-52-test suite; this release does not add a live MCP-client integration claim.
+historical 52-test suite. The current 1.0.4 unit suite has 58 cases; it does not
+add a live MCP-client integration claim.
 
 ### Preserve the normals Blender actually displays
 
@@ -78,8 +79,8 @@ Unset properties now expose their declared defaults: KEY high-priority node type
 
 ## Validation
 
-The current suite has 16 synthetic checks. Consult the `v1.0.3-coda.2` release
-results for runs against its exact packages; the retained comparison below is
+The current suite has 29 synthetic checks. Consult the `v1.0.4-coda.1`
+[release results](docs/release-1.0.4-coda.1.md) for runs against its exact packages; the retained comparison below is
 the historical ten-check baseline, not a claim that only ten checks remain.
 
 Run [the background regression suite](docs/agent-use.md). It creates synthetic geometry and a small animation, exports files and parses them back. It needs no commercial game data, model assets or network. Retained machine-readable results are [upstream](tests/evidence/upstream-bpy-5.1.2.json) and [fork candidate](tests/evidence/coda-bpy-5.1.2.json); both record the same harness hash and their exact source hashes.
