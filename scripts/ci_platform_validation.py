@@ -32,7 +32,7 @@ ASSET = "blender-5.2.3-macos-arm64.dmg"
 BASE_URL = "https://ftp.blender.org/release/Blender5.2/"
 # Verified against the official blender-5.2.3.sha256 on 2026-11-09.
 DMG_SHA256 = "acc05374485a272342d4b323c15ac01953e7f697da2f1bad8af9c3bf087267a4"
-EXPECTED_TESTS = 16
+EXPECTED_TESTS = 29
 
 
 def digest(path):
@@ -91,7 +91,7 @@ def validate_native_result(receipt, report):
             or receipt.get("regression") != {"passed": EXPECTED_TESTS, "failed": 0, "addon_source_unchanged": True}
             or report.get("passed") != EXPECTED_TESTS or report.get("failed") != 0
             or len(tests) != EXPECTED_TESTS or any(t.get("passed") is not True for t in tests)):
-        raise ValueError("Expected sixteen passing checks on native ARM64 macOS Blender " + BLENDER_VERSION)
+        raise ValueError(f"Expected {EXPECTED_TESTS} passing checks on native ARM64 macOS Blender " + BLENDER_VERSION)
 
 
 def run_logged(command, name, evidence, cwd, env, timeout, *, check=True):

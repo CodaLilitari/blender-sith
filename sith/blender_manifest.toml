@@ -2,7 +2,7 @@ schema_version = "1.0.0"
 
 id = "sith"
 name = "Blender Sith (Coda)"
-version = "1.0.3"
+version = "1.0.4"
 platforms = ["windows-x64"]
 tagline = "Sith model formats with normal, metadata and MAT fixes"
 maintainer = "Coda Lilitari; based on Blender-Sith by Crt Vavros"
