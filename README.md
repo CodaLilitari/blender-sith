@@ -1,4 +1,4 @@
-> **Community fork: Blender-Sith Agentic — 1.1.0 candidate.** This source integrates upstream **01ff4bd** with Coda's reviewed hexadecimal-property and native-pivot changes (PR16/PR23) and retained automation. The proposed release is **v1.1.0-coda.1**; publication and exact-package release validation are pending. The [published 1.0.4 record](docs/release-1.0.4-coda.1.md) remains historical evidence for its own bytes. See [provenance and migration](FORK.md), [package status](docs/platform-builds.md#latest-install-route) and [explicit API/target usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained. The optional [MCP companion](docs/MCP.md) is separate.
+> **Community fork: Blender-Sith Agentic — 1.1.0 release.** This source integrates upstream **01ff4bd** with Coda's reviewed hexadecimal-property and native-pivot changes (PR16/PR23) and retained automation. The release is **v1.1.0-coda.1**; exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS; see [release evidence](docs/release-1.1.0-coda.1.md). The [published 1.0.4 record](docs/release-1.0.4-coda.1.md) remains historical evidence for its own bytes. See [provenance and migration](FORK.md), [package status](docs/platform-builds.md#latest-install-route) and [explicit API/target usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained. The optional [MCP companion](docs/MCP.md) is separate.
 
 <div align="center">
 
@@ -46,7 +46,7 @@
 
 ## ✨ Features
 
-These features describe the current integrated candidate source. Published 1.0.4
+These features describe the integrated 1.1.0 source. Published 1.0.4
 packages do not acquire them from this README; choose the exact version and
 validation record deliberately.
 <div align="center">
@@ -102,7 +102,7 @@ validation record deliberately.
 
 ## ⚡ Quick Start
 
-1. **Select version**: Follow [platform builds](docs/platform-builds.md#latest-install-route) for the published 1.0.4 baseline or an explicitly selected 1.1.0 candidate build. Use Blender 5.0+ Preferences > Add-ons > Install from Disk for an extension ZIP; source loading is a separate route.
+1. **Select version**: Follow [platform builds](docs/platform-builds.md#latest-install-route) for the 1.1.0 release and its exact validation scope. Use Blender 5.0+ Preferences > Add-ons > Install from Disk for an extension ZIP; source loading is a separate route.
 2. **Import Model**: `File > Import > Sith Game Engine 3D Model (.3do)`
 3. **Import Textures**: Use MAT Directory option or let auto-search find them
 4. **Import Animation**: `File > Import > Sith Game Engine Animation (.key)`
@@ -125,7 +125,7 @@ validation record deliberately.
 
 ### Method 1: From Release (Recommended)
 
-1. 📥 **Download** the chosen named extension ZIP from the [published baseline](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1), checking its hash. The candidate 1.1.0 release remains pending; consult [package status](docs/platform-builds.md).
+1. 📥 **Download** the chosen named extension ZIP from the [1.1.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.1.0-coda.1.md) and [package status](docs/platform-builds.md).
 2. 🔧 **Open Blender** and go to `Edit > Preferences > Add-ons`
 3. 📂 **Install**: Click the dropdown menu (▼) at the top-right and select `Install from Disk...`
 4. 📁 **Select** the downloaded ZIP file
@@ -205,15 +205,14 @@ blender --background --factory-startup --python-exit-code 1 --python tests/run.p
 
 Both suites use standard-library `unittest` and synthetic fixtures. GitHub Actions
 configuration includes core jobs on Windows, macOS and Linux, and application
-tests in headless Blender on Linux. Configuration is not a completed candidate
-pass. Also run the retained [bounded fork/package checks](docs/agent-use.md),
+tests in headless Blender on Linux. Completed runs are linked from the [release record](docs/release-1.1.0-coda.1.md). Also run the retained [bounded fork/package checks](docs/agent-use.md),
 binding exact source/ZIP hashes and measured runtimes. Use explicit runtime paths,
 isolated preferences and deadlines; keep environments/results outside Git trees.
 See [tests/README.md](tests/README.md) for coverage, commands and interpolation limits.
 
 ## Links
 
-- 📦 [published 1.0.4 baseline](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) - Candidate 1.1.0 status is recorded in the platform guide
+- 📦 [1.1.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1) - Validation scope is recorded in the platform guide
 - 🐛 [Issue Tracker](https://github.com/smlu/blender-sith/issues) - Report bugs or request features
 - 🌐 [Blender.org](https://www.blender.org/) - Get Blender
 

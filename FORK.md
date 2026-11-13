@@ -2,7 +2,7 @@
 
 This community fork integrates [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith) at upstream [`01ff4bd85498074e6f936d9adbbcc93817ca712d`](https://github.com/smlu/blender-sith/commit/01ff4bd85498074e6f936d9adbbcc93817ca712d), Coda's reviewed [hexadecimal-property change (PR16)](https://github.com/smlu/blender-sith/pull/16), [native-pivot change (PR23)](https://github.com/smlu/blender-sith/pull/23), and retained automation/package tooling. Original history, copyright notices and GPL-3.0-or-later licensing are preserved. Coda collaborates with Andrei on the fork and JK/MotS Model Workshop; the broader resource core, native MAT writer, recovery and animation architecture remain attributed to upstream.
 
-**Candidate:** extension `1.1.0`, display name **Blender Sith (Coda)**, proposed distribution `v1.1.0-coda.1`. Publication and exact-package validation are pending. A candidate checkout, published ZIP and installed extension are distinct artifacts. The [published 1.0.4 baseline](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) remains separately identified in [platform builds](docs/platform-builds.md#latest-install-route); do not treat its receipts as validation of this candidate.
+**Release:** extension `1.1.0`, display name **Blender Sith (Coda)**, distribution `v1.1.0-coda.1`. Exact-package validation passed; see the 1.1.0 release record and matching package receipts. See [matching packages](docs/platform-builds.md#latest-install-route). Checkouts, release ZIPs and installed extensions have separately recorded identities.
 
 Source distribution remains on [GitHub](https://github.com/CodaLilitari/blender-sith) and [GitLab](https://gitlab.com/codalilitari/blender-sith). Verify each host's exact revision before treating copies as equivalent. The extension ID is `sith`; use one edition in a given Blender extension repository. Blender itself is not forked.
 
@@ -42,7 +42,7 @@ Use registered properties and readback assertions; raw ID-property writes bypass
 
 ## Validation status and historical evidence
 
-Candidate release validation remains pending. Keep three results separate: upstream no-Blender `core`, real Blender `app`, and bounded fork/package checks. Record the source revision and local changes, exact ZIP hashes, measured runtimes, failures and skips. Configured CI is not a successful run. [Test boundaries](tests/README.md) and [agent commands](docs/agent-use.md) describe the checks.
+The [1.1.0 release record](docs/release-1.1.0-coda.1.md) records completed package and native validation. Keep three results separate: upstream no-Blender `core`, real Blender `app`, and bounded fork/package checks. Record the source revision and local changes, exact ZIP hashes, measured runtimes, failures and skips. Configured CI is not a successful run. [Test boundaries](tests/README.md) and [agent commands](docs/agent-use.md) describe the checks.
 
 The original fork started at upstream `ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`. Its retained ten-check comparison on `bpy` 5.1.2 reported four passes/six failures upstream and ten passes in the focused fork. The [upstream receipt](tests/evidence/upstream-bpy-5.1.2.json), [original fork receipt](tests/evidence/coda-bpy-5.1.2.json) and [four-observation probe](tests/evidence/remaining-limitations-bpy-5.1.2.json) retain those source/harness identities. They do not describe today's core or prove current normal/color semantics.
 

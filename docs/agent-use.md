@@ -1,6 +1,6 @@
 # Background use and validation
 
-This guide describes the **1.1.0 candidate API**, integrating upstream `01ff4bd` and the reviewed Coda hex/pivot changes. Publication and exact-package validation are pending. Use [platform builds](platform-builds.md) for the separately identified published baseline and [FORK.md](../FORK.md) for provenance and limits.
+This guide describes the **1.1.0 API**, integrating upstream `01ff4bd` and the reviewed Coda hex/pivot changes. Exact-package validation passed; see the 1.1.0 release record and matching package receipts. Use [platform builds](platform-builds.md) for the separately identified published baseline and [FORK.md](../FORK.md) for provenance and limits.
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
@@ -34,7 +34,7 @@ blender --background --factory-startup --offline-mode --threads 2 --python-exit-
 
 These are illustrative commands from the matching full-source root. Substitute the reviewed absolute interpreter/Blender path and supervise them with a deadline. Use Python 3.11+ and the dependencies declared in `tests/requirements.txt`; keep any environment outside the checkout. The installed add-on alone does not contain the development tests.
 
-The `core` suite exercises real codecs without fake Blender modules. `app` and `all` require real background Blender 5.0+; `all` runs both suites. A standalone core pass does not test scene adapters, `exportMat` or rendering. [tests/README.md](../tests/README.md) gives current coverage and limitations. Record source identity, runtime, totals, failures and skips; candidate receipts remain pending until these jobs actually complete.
+The `core` suite exercises real codecs without fake Blender modules. `app` and `all` require real background Blender 5.0+; `all` runs both suites. A standalone core pass does not test scene adapters, `exportMat` or rendering. [tests/README.md](../tests/README.md) gives current coverage and limitations. Record source identity, runtime, totals, failures and skips; completed release checks are recorded separately from unexecuted game acceptance.
 
 ## Import an existing textured model
 
