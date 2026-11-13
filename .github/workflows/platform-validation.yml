@@ -40,3 +40,32 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
           compression-level: 6
+
+  linux-x64:
+    # Standard public-repository runners are free; never use a private copy.
+    if: github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out the selected revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Select Python 3.13
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - name: Validate four ZIPs and run native Linux Blender 5.1.2
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -B scripts/ci_linux_validation.py --output "$RUNNER_TEMP/sith-linux-validation"
+      - name: Retain package, receipts and logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-x64-blender-5.1.2-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/sith-linux-validation/evidence/
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 6
