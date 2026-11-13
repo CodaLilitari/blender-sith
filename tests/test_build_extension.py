@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
+import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import zipfile
 
 
@@ -18,6 +21,18 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "build_extension.py"
 
 
 class BuildExtensionTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == 'posix' and shutil.which('sh'), 'POSIX wrapper requires a POSIX host')
+    def test_shell_wrapper_retains_deterministic_directory_arguments(self):
+        output = self.root / 'wrapper output with spaces'
+        result = subprocess.run(
+            ['sh', str(SCRIPT.with_name('make_addon.sh')), '--source-dir', str(self.source),
+             '--output-dir', str(output)],
+            env=dict(os.environ, PYTHON=sys.executable), capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        artifacts = json.loads(result.stdout)
+        self.assertTrue(Path(artifacts['archive']).is_file())
+        self.assertTrue(Path(artifacts['receipt']).is_file())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="sith package tests ")
         self.addCleanup(self.temp.cleanup)
@@ -108,6 +123,33 @@ class BuildExtensionTests(unittest.TestCase):
             path.chmod(0o744)
         second, _ = self.build(self.root / "second")
         self.assertEqual(before, second.read_bytes())
+
+    def test_unreadable_submodule_aborts_before_creating_archive_or_receipt(self):
+        required = self.addon / "required_module"
+        required.mkdir()
+        (self.addon / "__init__.py").write_text("from .required_module import VALUE\n", encoding="utf-8")
+        (required / "__init__.py").write_text("VALUE = 123\n", encoding="utf-8")
+        baseline, _ = self.build(self.root / "readable")
+        with zipfile.ZipFile(baseline) as archive:
+            self.assertIn("required_module/__init__.py", archive.namelist())
+
+        spec = importlib.util.spec_from_file_location("sith_packager_unreadable_test", SCRIPT)
+        packager = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(packager)
+        real_scandir = os.scandir
+
+        def unreadable_directory(path):
+            if Path(path) == required:
+                raise PermissionError("Cannot enumerate required package module")
+            return real_scandir(path)
+
+        output = self.root / "unreadable"
+        # Model an enumeration failure without relying on host ACLs or privileges.
+        # Leave the actual walk, source inventory and archive builder in use.
+        with patch.object(packager.os, "scandir", side_effect=unreadable_directory), \
+                self.assertRaisesRegex(PermissionError, "required package module"):
+            packager.build_extension(self.source, output)
+        self.assertFalse(output.exists())
 
     def test_platform_names_come_from_manifest(self):
         for platforms, expected in [(["linux-x64"], "linux-x64"),

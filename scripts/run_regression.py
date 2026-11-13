@@ -21,7 +21,7 @@ import time
 
 LEXICAL_ROOT = Path(os.path.abspath(__file__)).parents[1]
 ROOT = LEXICAL_ROOT.resolve()
-SCHEMA = "blender-sith-agentic-regression-v1"
+SCHEMA = "blender-sith-agentic-regression-v2"
 
 
 def digest(path):
@@ -191,7 +191,7 @@ def main(argv=None):
                                     args.bpy_site.resolve() if args.bpy_site else None), encoding="utf-8")
         executable = args.blender or args.python
         resolved = shutil.which(executable) or executable
-        command = ([resolved, "--background", "--factory-startup", "--offline-mode", "--threads", str(args.threads),
+        command = ([resolved, "--background", "--factory-startup", "--offline-mode", "--disable-autoexec", "--threads", str(args.threads),
                     "--python-exit-code", "1", "--python", str(wrapper)] if args.blender
                    else [resolved, "-B", str(wrapper)])
         process = None
