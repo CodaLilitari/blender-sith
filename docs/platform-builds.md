@@ -1,134 +1,61 @@
 # Windows, Linux, macOS and universal packages
 
-Blender-Sith is a Python extension, not a custom Blender executable. Release
-`v1.0.4-coda.1` uses extension ID `sith`, extension version `1.0.4`, and display
-name **Blender Sith (Coda)**. The release suffix identifies the distribution;
-it does not change the version in Blender's extension manifest. Install one
-edition in a given Blender extension repository.
+Blender-Sith is a Python extension, not a custom Blender executable. This source is the **1.1.0 release**, distribution `v1.1.0-coda.1`, extension ID `sith`, display name **Blender Sith (Coda)**. Exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS. A release suffix identifies the distribution, not a different extension version.
 
 ## Latest install route
 
-For `v1.0.4-coda.1`, download the appropriate extension ZIP from the
-[GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1)
-or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1).
-Choose a named extension asset, rather than the hosting service's source-code ZIP:
+Download [GitHub v1.1.0-coda.1](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1) or [GitLab v1.1.0-coda.1](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.1.0-coda.1). Check `SHA256SUMS.txt` and the [release record](release-1.1.0-coda.1.md).
 
-| Platform | Extension ZIP | Manifest restriction |
+| Platform | Extension ZIP | Measured execution |
 | --- | --- | --- |
-| Windows x64 | `sith-1.0.4-windows-x64.zip` | `windows-x64` |
-| Linux x64 | `sith-1.0.4-linux-x64.zip` | `linux-x64` |
-| macOS Apple Silicon | `sith-1.0.4-macos-arm64.zip` | `macos-arm64` |
-| Universal Python package | `sith-1.0.4-universal.zip` | No platform restriction |
+| Windows x64 | `sith-1.1.0-windows-x64.zip` | Python 3.13 / bpy 5.1.2 |
+| Linux x64 | `sith-1.1.0-linux-x64.zip` | Native Blender 5.1.2 |
+| macOS Apple Silicon | `sith-1.1.0-macos-arm64.zip` | Native Blender 5.2.3 LTS |
+| Universal | `sith-1.1.0-universal.zip` | Windows Python/bpy regression |
 
-The four editions share the format implementation and tests. The universal ZIP
-contains the same Python extension without a platform restriction; it is not a
-compiled universal Blender binary or evidence of testing on every architecture.
-Use the release's package receipts and validation results to check the exact
-artifact and runtime tested. The exact 1.0.4 packages passed 29 synthetic checks on Windows, Linux and
-Apple Silicon; its [release record](release-1.0.4-coda.1.md) identifies the runtimes and scope.
-The earlier [1.0.3 validation](release-1.0.3-coda.2.md) remains historical.
+All editions share the format implementation; their manifests select platforms. The universal ZIP is neither a universal Blender executable nor proof of every architecture. Choose a named extension ZIP, not the hosting service's source archive, and compare its hash with the exact release receipts.
 
-In Blender 5.0+, open Preferences > Add-ons > Install from Disk and select the
-extension ZIP. The extension ID is also used by upstream Blender-Sith, so replace
-or disable the previous edition in that extension repository before using this
-one. The optional [MCP companion](MCP.md) is separate and is not required for
-ordinary Blender installation.
+In Blender 5.0+, open Preferences > Add-ons > Install from Disk, select the ZIP and enable **Blender Sith (Coda)**. The ID is also used by upstream; use one edition in a given extension repository. Background source loading is separate from desktop installation/enablement. The optional [MCP companion](MCP.md) is not required.
 
 ## Build an installable ZIP
 
-Use Python 3.11 or newer. No dependency installation or Git subprocess is
-required by the packager. Run from any directory, supplying an external
-destination outside every Git checkout:
+The fork's deterministic builder needs Python 3.11+ and the standard library. It does not run Git or install dependencies:
 
 ```sh
-python3 /path/to/blender-sith/scripts/build_extension.py --output-dir /tmp/sith-package
+python /path/to/source/scripts/build_extension.py \
+  --source-dir /path/to/reviewed/source --output-dir /external/new-package-directory
 ```
 
-```powershell
-python C:\src\blender-sith\scripts\build_extension.py --output-dir C:\builds\sith-package
-```
+Use actual absolute paths. The output must be physically outside the source and every Git checkout, without symlinks or junctions back into source. The builder reads the selected source's `sith/blender_manifest.toml`; version and platform restrictions determine the filename. A source without `platforms` produces the universal edition. Build platform variants from explicitly prepared external source copies, preserving the intended common payload.
 
-The packager reads `sith/blender_manifest.toml` from the selected source tree.
-A source with no `platforms` entry builds `sith-1.0.4-universal.zip`; a source
-restricted to `linux-x64`, `windows-x64`, or `macos-arm64` builds the corresponding
-named ZIP in the table above. Use `--source-dir /path/to/source` to select another
-explicit source tree. A companion `.receipt.json` records the archive SHA-256
-and per-file raw/packaged SHA-256 values. The ZIP contains
-`blender_manifest.toml`, `__init__.py`, source subpackages and `LICENSE` at the
-extension root. Only add-on Python/TOML source and the license are packaged.
-Unknown files under the add-on root fail the build instead of silently disappearing;
-Python bytecode/cache directories are ignored. Explicit empty platform lists are
-rejected; omit `platforms` to build without platform restrictions.
-LF normalization, stable ordering, fixed timestamps and uncompressed ZIP
-members make bytes reproducible across operating systems. Existing packages
-and receipts are never overwritten.
+A companion `.receipt.json` records archive SHA-256 and raw/packaged file hashes. The extension ZIP contains manifest, `__init__.py`, source subpackages and original license at its root. Only allowed Python/TOML source and license files are packaged; unknown resources fail rather than silently disappear. Generated bytecode/cache entries are excluded by the packager. Stable ordering, LF normalization, fixed timestamps and uncompressed members make reproducible bytes. Existing archives/receipts are not overwritten.
 
-The current regression suite includes automatic-radius and native-pivot checks. Release validation must
-identify the exact runtime versions and package hashes exercised; older 10- or
-13-check reports remain historical evidence for their recorded source. Automated
-validation does not establish interactive installation or every Blender-version
-behavior.
+The shell wrapper `scripts/make_addon.sh` routes explicit `--output-dir`/`--source-dir` arguments to deterministic `build_extension.py`; upstream arguments such as `--output ZIP` go to `make_addon.py`. Both Python builders remain available directly. Keep receipts paired with their actual archives.
 
-## Linux agent workflow
+An extension-schema validation pass only checks the package contract. It is separate from executing the extracted add-on and from desktop activation.
+
+## Bounded runtime checks
+
+Use the reviewed launcher and an explicit selected add-on, including when checking the installed package:
 
 ```sh
-sh /path/to/blender-sith/scripts/run_regression.sh \
-  --blender /path/to/blender \
-  --output /tmp/sith-regression-001 --threads 2 --timeout 300
+python /path/to/source/scripts/run_regression.py \
+  --addon /path/to/verified/sith --blender /path/to/blender \
+  --output /external/new-regression-job --threads 2 --timeout 300
 ```
 
-Each job is a fresh background process with factory settings, isolated user
-configuration, an actual process timeout, and a two-thread default. This makes
-short agent jobs bounded and repeatable without changing desktop preferences.
-Place runtimes, dependency environments, build archives and results physically
-outside Git checkouts. On WSL, use Linux-native storage for repeated working
-assets and large jobs; no symlinks or junctions back into the source tree.
+Windows uses the same launcher or `scripts/run_regression.ps1`, with explicit absolute Windows paths. An existing compatible Python/`bpy` environment may use `--python /path/to/environment/python` and optional `--bpy-site /path/to/existing/site-packages` instead of `--blender`. The Linux shell wrapper forwards these options. Do not omit `--addon`; its default is the launcher's checkout, which can differ from the intended installation.
 
-The output contains logs, `receipt.json`, and `results/regression.json` with
-synthetic exported fixtures. A zero exit requires a valid completed report,
-all assertions passing, and unchanged source hashes. Timeout or child-process
-failure returns nonzero. CPU limits are configurable; no render-speed claim is
-made.
+The model workflow's private current-install resolver can provide the verified add-on/runtime and exact regression argv. That resolver is a local selection/verification mechanism, not part of the portable extension and not an installer. Explicit comparison jobs retain separate source/runtime identities.
 
-## Windows workflow
+Each job uses a disposable background process, isolated preferences and an actual subprocess deadline. Outputs include logs, `receipt.json` and `results/regression.json`; successful execution requires a completed report and unchanged source hashes. Runtime version and source identity must be measured, not inferred from a path or label. Keep caches, environments and generated files external as well.
 
-```powershell
-& C:\src\blender-sith\scripts\run_regression.ps1 `
-  --blender 'C:\Program Files\Blender Foundation\Blender 5.1\blender.exe' `
-  --output C:\builds\sith-regression-001 --threads 2 --timeout 300
-```
+Run upstream `tests/run.py --suite core` and real Blender `--suite app` separately as described in [agent usage](agent-use.md). The fork suite, upstream suites, schema validator and actual game checks establish different contracts. Retain failures and capability skips. Older check totals cannot be projected onto new source.
 
-An existing native Python installation with compatible `bpy` is also supported:
+## macOS and Linux native CI
 
-```powershell
-python C:\src\blender-sith\scripts\run_regression.py `
-  --python 'C:\Python313\python.exe' --bpy-site 'C:\runtimes\bpy-site' `
-  --output C:\builds\sith-regression-002
-```
+The Mac edition targets Apple Silicon and the same Python implementation as Windows/Linux. It does not claim Intel Mac support. Packaging equivalence and source reading are not native execution; the exact new ZIP needs a corresponding native receipt. Interactive installation, viewport behavior and game playback remain separate checks.
 
-The launcher does not download Blender or install dependencies. Explicit
-executable paths handle installations outside PATH. Use `--addon` to point at
-an extracted package's root and validate the exact distributable source.
-These commands run synthetic add-on tests; retail and multiplayer checks are
-separate, as described in [FORK.md](../FORK.md).
+The manually dispatched **Native platform validation** workflow is configured on the common `master` branch. Its Mac job uses `macos-15` ARM64 with Blender 5.2.3 LTS; Linux uses `ubuntu-24.04` x86_64 with Blender 5.1.2. The jobs verify official download checksums and retain packages, results and logs in external runner storage. Linux also validates the four package schemas. Read the actual workflow/run before citing a matrix; configuration alone is not a completed pass.
 
-## macOS package scope
-
-The Mac ZIP contains the same Python add-on as the Linux and Windows editions,
-with Apple Silicon listed in its manifest. It does not contain
-a Blender executable or compiled universal binary. Packaging and source equivalence
-are separate from native execution. Consult the release record for native ARM64 macOS validation of the exact ZIP.
-Interactive installation, viewport use and game playback remain separate checks.
-Official Intel Mac builds end at Blender 4.5 LTS, below this add-on's Blender 5.0
-minimum. Supporting Intel would require a separately validated custom Blender 5+
-build; the Mac release does not claim that support. See [Blender alignment](blender-alignment.md).
-
-The optional [MCP companion](MCP.md) is distributed separately from the extension
-ZIPs. Blender users do not need the MCP SDK to install the add-on.
-
-To repeat native Mac and Linux validation, manually dispatch **Native platform validation**
-on the common `master` branch in GitHub Actions. It uses the standard `macos-15`
-ARM64 runner with Blender 5.2.3 LTS and standard `ubuntu-24.04` x86_64 with
-Blender 5.1.2. Both jobs verify official download checksums and retain exact
-packages, receipts and logs. Linux validates all four package schemas. The job has no release-publishing step and only runs
-in a public repository. It does not run automatically on pushes or tags.
+This workflow has no release-publication step, runs only in a public repository, and is manual rather than triggered by pushes/tags. Release finalization must bind every result to the final commit/package hashes and distinguish native Windows, Linux and ARM64 macOS evidence. [Historical 1.0.3](release-1.0.3-coda.2.md) and [1.0.4](release-1.0.4-coda.1.md) records remain unchanged.

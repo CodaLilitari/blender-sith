@@ -9,12 +9,14 @@ No owned game data, desktop preferences, add-on installation, or network needed.
 from __future__ import annotations
 
 import argparse
+import bisect
 import contextlib
 import hashlib
 import importlib
 import importlib.util
 import io
 import json
+import math
 from pathlib import Path
 import sys
 import traceback
@@ -34,7 +36,7 @@ def main():
     sys.dont_write_bytecode = True
     import bpy
     import bmesh
-    from mathutils import Vector
+    from mathutils import Matrix, Vector
 
     if not bpy.app.background:
         parser.error("Use a fresh background Blender process, never an interactive scene")
@@ -55,12 +57,18 @@ def main():
     spec.loader.exec_module(addon)
     addon.register()
     loader = importlib.import_module(name + ".model.model3doLoader")
+    exporter = importlib.import_module(name + ".model.model3doExporter")
+    importer = importlib.import_module(name + ".model.model3doImporter")
     utils = importlib.import_module(name + ".model.utils")
     keyloader = importlib.import_module(name + ".key.keyLoader")
+    keyexporter = importlib.import_module(name + ".key.keyExporter")
+    keytypes = importlib.import_module(name + ".key.key")
+    keyutils = importlib.import_module(name + ".key.keyUtils")
     types = importlib.import_module(name + ".model.model3do")
-    report = {"schema": "blender-sith-agentic-regression-v1", "blender": bpy.app.version_string,
+    report = {"schema": "blender-sith-agentic-regression-v2", "blender": bpy.app.version_string,
               "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-              "addon_sha256": before_hashes, "tests": [], "scope": "Synthetic serialized 3DO/KEY only; no game runtime claim"}
+              "addon_sha256": before_hashes, "tests": [], "key_targets": ["JKDF2", "MOTS"],
+              "scope": "Synthetic serialized 3DO/KEY only; no game runtime claim"}
 
     def reset():
         bpy.ops.object.select_all(action="SELECT")
@@ -89,16 +97,21 @@ def main():
         return {"vertices": [tuple(v.co) for v in mesh.vertices],
                 "polygons": [tuple(p.vertices) for p in mesh.polygons],
                 "corner_normals": [tuple(n.vector) for n in mesh.corner_normals],
-                "uv": [tuple(d.uv) for d in mesh.uv_layers.active.data] if mesh.uv_layers.active else []}
+                "uv": [tuple(d.uv) for d in mesh.uv_layers.active.data] if mesh.uv_layers.active else [],
+                "colors": [(layer.name, layer.domain, layer.data_type,
+                            [tuple(d.color) for d in layer.data]) for layer in mesh.color_attributes],
+                "smooth": [p.use_smooth for p in mesh.polygons],
+                "sharp": [edge.use_edge_sharp for edge in mesh.edges],
+                "materials": [m.name if m else None for m in mesh.materials]}
 
     def roundtrip(obj, label, colors=False, absolute=False, version=None):
         filename = output / (label + ".3do")
-        addon.export3do(obj, str(filename), version or loader.Model3doFileVersion.Version2_1,
+        exporter.export3do(obj, str(filename), version or loader.Model3doFileVersion.Version2_1,
                         absolute, colors, True)
         model, _ = loader.load3do(str(filename))
         return model
 
-    def check_normals(obj, label, expected_count):
+    def check_normals(obj, label, expected_count, use_corners=True):
         mesh = obj.data
         before = snapshot(mesh)
         model = roundtrip(obj, label)
@@ -108,15 +121,20 @@ def main():
         worst = 0.0
         for polygon, face in zip(mesh.polygons, exported.faces):
             assert len(face.vertexIdxs) == len(polygon.loop_indices)
+            assert (Vector(face.normal) - polygon.normal).length < 2e-6
             for loop_index, index in zip(polygon.loop_indices, face.vertexIdxs):
                 loop = mesh.loops[loop_index]
                 assert (Vector(exported.vertices[index]) - mesh.vertices[loop.vertex_index].co).length < 1e-6
-                error = (Vector(exported.normals[index]) - mesh.corner_normals[loop_index].vector).length
+                expected = (mesh.corner_normals[loop_index].vector if use_corners
+                            else mesh.vertices[loop.vertex_index].normal)
+                error = (Vector(exported.normals[index]) - expected).length
                 worst = max(worst, error)
         assert worst < 2e-6, f"worst corner-normal error {worst}"
         assert snapshot(mesh) == before, "Export changed source mesh"
         return {"source_vertices": len(mesh.vertices), "exported_vertices": expected_count,
-                "checked_corners": len(mesh.loops), "max_normal_error": worst, "source_unchanged": True}
+                "checked_corners": len(mesh.loops), "max_normal_error": worst,
+                "normal_contract": "authored corners" if use_corners else "geometric vertices and face normals",
+                "source_unchanged": True}
 
     def split_vertices():
         obj = mesh_object("split", [(0,0,0),(1,0,0),(0,1,0),(0,0,0),(0,0,1),(1,0,0)], [(0,1,2),(3,4,5)])
@@ -133,7 +151,10 @@ def main():
             for edge in obj.data.edges:
                 edge.use_edge_sharp = True
         obj.data.update()
-        return check_normals(obj, "cube_" + style, 8 if style == "smooth" else 24)
+        # Native faces carry their own flat normal. Explicit sharp/custom normals
+        # split vertices; Blender's ordinary flat-shading flag alone does not.
+        return check_normals(obj, "cube_" + style, 24 if style == "sharp" else 8,
+                             use_corners=style == "sharp")
 
     def custom_normals():
         obj = mesh_object("custom", [(0,0,0),(1,0,0),(1,1,0),(0,1,0)], [(0,1,2),(0,2,3)])
@@ -201,8 +222,9 @@ def main():
                         u, v = coords[loop_index]
                         expected_uv = Vector((u * (128 if absolute else 1), -v * (64 if absolute else 1)))
                         assert (Vector(exported.uvs[ui]) - expected_uv).length < 2e-6
-                        # Existing exporter uses BMesh byte-color (sRGB) values.
-                        expected_color = mesh.color_attributes["Color"].data[loop_index].color_srgb
+                        # Native light values are linear, including BYTE_COLOR's
+                        # RNA conversion; exporting its sRGB bytes is a regression.
+                        expected_color = mesh.color_attributes["Color"].data[loop_index].color
                         assert max(abs(a-b) for a,b in zip(exported.vertexColors[index][:3], expected_color[:3])) < 2e-6
                 checks.append(label)
         assert snapshot(mesh) == before
@@ -252,34 +274,49 @@ def main():
         assert before == {o.name: snapshot(o.data) for o in bpy.context.scene.objects if o.type == 'MESH'}
         return model, {"radius": model.radius, "expected": expected, "source_unchanged": True}
 
+    def rejected_model(obj, label, message):
+        """Unsupported transforms must fail before replacing a saved resource."""
+        path = output / (label + '.3do')
+        original = b'Existing resource must survive validation failure\n'
+        path.write_bytes(original)
+        before = {o.name: snapshot(o.data) for o in bpy.context.scene.objects if o.type == 'MESH'}
+        try:
+            roundtrip(obj, label)
+        except ValueError as exc:
+            assert message in str(exc), str(exc)
+        else:
+            raise AssertionError('Unsupported model transform was accepted')
+        assert path.read_bytes() == original
+        assert before == {o.name: snapshot(o.data) for o in bpy.context.scene.objects if o.type == 'MESH'}
+
     def model_radius_origin():
         # An off-origin triangle needs radius 9, not half its bounding diagonal.
-        # The loose vertex is not exported and must not enlarge the model sphere.
-        obj = mesh_object('rad_origin', [(8,0,0),(9,0,0),(8,1,0),(100,0,0)], [(0,1,2)])
+        obj = mesh_object('rad_origin', [(8,0,0),(9,0,0),(8,1,0)], [(0,1,2)])
         model, details = radius_result(obj, 'radius_origin', 9.0)
         assert len(model.geosets[0].meshes[0].vertices) == 3
-        assert model.geosets[0].meshes[0].radius == 100.0, 'Mesh-radius semantics changed'
-        # Native models may have multiple LOD geosets. The helper must also
-        # cover a farther vertex in a later geoset, using the same hierarchy.
-        later_geoset = types.Model3doGeoSet()
-        later_mesh = types.Mesh3do(0, 'far_lod')
-        later_mesh.vertices = [utils.Vector3f(12,0,0)]
-        later_geoset.meshes.append(later_mesh)
-        model.geosets.append(later_geoset)
-        exporter = importlib.import_module(name + '.model.model3doExporter')
-        assert exporter._get_model_radius(model) == 12.0
-        details['later_geoset_radius'] = 12.0
+        assert model.geosets[0].meshes[0].radius == 9.0
+        # Upstream preserves loose vertices, so they must contribute to both
+        # automatic bounds. Scene export represents geoset 0 only.
+        loose = mesh_object('rad_origin_loose', [(8,0,0),(9,0,0),(8,1,0),(100,0,0)], [(0,1,2)])
+        loose_model, _ = radius_result(loose, 'radius_origin_loose', 100.0)
+        assert len(loose_model.geosets[0].meshes[0].vertices) == 4
+        assert loose_model.geosets[0].meshes[0].radius == 100.0
+        details['preserved_loose_vertex_radius'] = 100.0
+        details['scene_geosets'] = len(loose_model.geosets)
+        assert details['scene_geosets'] == 1
         return details
 
     def model_radius_hierarchy():
         root = radius_empty('rad_container')
         root.location = (100,-200,300)
-        root.rotation_euler.z = 0.7  # Container rotation is not exported.
+        root.rotation_euler.z = 0.7
         parent = radius_empty('rad_parent', root)
         parent.location = (3,4,0)
         parent.rotation_euler.z = 1.5707963267948966
         child = radius_triangle('rad_child', parent, 1)
         child.location = (2,0,0)
+        rejected_model(root, 'radius_wrapper_rotation', 'Apply model wrapper rotation')
+        root.rotation_euler.z = 0.0
         # Exported points: (3,6,0), (3,7,0), (2,6,0).
         model, details = radius_result(root, 'radius_hierarchy', 58.0 ** 0.5)
         assert tuple(model.insertOffset) == (100,-200,300), 'Insert-offset semantics changed'
@@ -298,22 +335,29 @@ def main():
         child.location = (0,1,0)
         child.scale = (1,2,0.5)
         child.sith_model3do_hnode_idx = 1
-        # Already-scaled exported vertices produce (.5,0,0), (.5,-4,0), (-2.5,0,2).
-        model, details = radius_result(root, 'radius_nested_scale', 16.25 ** 0.5)
+        # The old fixture silently lost shear. Reject that noncommuting scale,
+        # then test supported reflected/nonuniform scale with equal X/Y parent
+        # factors around the Z rotation: points (1,0,0), (1,-4,0), (-1,0,2).
+        rejected_model(root, 'radius_noncommuting_scale', 'Apply nonuniform parent scale')
+        root.scale = (2,2,4)
+        model, details = radius_result(root, 'radius_nested_scale', 17.0 ** 0.5)
         assert tuple(model.meshHierarchy[0].position) == (2,0,0)
-        assert tuple(model.meshHierarchy[1].position) == (0,1.5,0)
+        assert tuple(model.meshHierarchy[1].position) == (0,1,0)
+        details['noncommuting_scale_rejected_without_overwrite'] = True
         return details
 
     def model_radius_scaled_siblings():
         root = radius_empty('rad_siblings')
-        left = radius_triangle('rad_left', root)
+        joint = radius_empty('rad_siblings_joint', root)
+        left = radius_triangle('rad_left', joint, 1)
         left.scale = (2,1,1)
-        right = radius_triangle('rad_right', root, 1)
+        right = radius_triangle('rad_right', joint, 2)
         right.location = (10,0,0)
         right.scale = (3,1,1)
-        # Separate root nodes: rightmost vertex is (13,0,0), regardless of left scale.
+        # Siblings under one native root: rightmost vertex is (13,0,0),
+        # regardless of the left sibling's scale. Multiple roots are invalid.
         model, details = radius_result(root, 'radius_scaled_siblings', 13.0)
-        assert [n.parentIdx for n in model.meshHierarchy] == [-1,-1]
+        assert [n.parentIdx for n in model.meshHierarchy] == [-1,0,0]
         assert [m.radius for m in model.geosets[0].meshes] == [2.0,3.0]
         return details
 
@@ -324,6 +368,8 @@ def main():
         parent.rotation_euler.z = 1.5707963267948966
         pivot = parent.constraints.new('PIVOT')
         pivot.offset = (-2,0,0)
+        pivot.rotation_range = 'ALWAYS_ACTIVE'
+        pivot.use_relative_location = True
         child = radius_triangle('rad_pivot_child', parent, 1)
         child.location = (4,0,0)
         # Parent points (1,2), (1,3), (0,2); child points (1,4), (1,5), (0,4).
@@ -335,14 +381,17 @@ def main():
 
     def model_radius_empty_geometry():
         root = radius_empty('rad_empty')
-        # The export omits helper geometry and unreferenced loose vertices.
-        loose = mesh_object('rad_loose', [(900,0,0)], [])
-        loose.parent = root
+        empty = mesh_object('rad_empty_mesh', [], [])
+        empty.parent = root
         helper = radius_triangle('MESH_RADIUS_unused', root, 1)
-        helper.location = (999,999,999)
         model, details = radius_result(root, 'radius_empty_geometry', 0.0)
         assert len(model.meshHierarchy) == 1
         assert not model.geosets[0].meshes[0].vertices
+        # A loose point is exported geometry, unlike an empty mesh or helper.
+        loose = mesh_object('rad_loose', [(900,0,0)], [])
+        loose_model, _ = radius_result(loose, 'radius_loose_only', 900.0)
+        assert [tuple(v) for v in loose_model.geosets[0].meshes[0].vertices] == [(900,0,0)]
+        details['loose_only_radius'] = 900.0
         return details
 
     def model_radius_override():
@@ -372,7 +421,7 @@ def main():
         return source, path
 
     def import_pivot_fixture(path):
-        return addon.import3do(str(path), mat_dirs=[], uvAbsolute_2_1=False,
+        return importer.import3do(str(path), mat_dirs=[], uvAbsolute_2_1=False,
                                importVertexColors=False, importRadiusObj=False,
                                preserveOrder=True, clearScene=True)
 
@@ -413,7 +462,8 @@ def main():
         assert [tuple(n.pivot) for n in nodes] == [(4,0,0),(0,4.5,0)]
         assert [tuple(n.position) for n in nodes] == [(3,4,0),(4,0,0)]
         assert [tuple(v) for v in actual.geosets[0].meshes[0].vertices] == [(0,0,0),(2,0,0),(0,3,0)]
-        assert [tuple(v) for v in actual.geosets[0].meshes[1].vertices] == [(0,0,0),(-2,0,0),(0,1.5,0)]
+        # Reflected scale reverses native winding and can reorder vertex records.
+        assert sorted(tuple(v) for v in actual.geosets[0].meshes[1].vertices) == sorted([(0,0,0),(-2,0,0),(0,1.5,0)])
         return {'pivots': [list(n.pivot) for n in nodes], 'scaled_vertices': 'baked exactly once'}
 
     def pivot_import_constraint_precedence():
@@ -422,6 +472,8 @@ def main():
         parent = root.children[0]
         constraint = parent.constraints.new('PIVOT')
         constraint.offset = (-5,0,0)
+        constraint.rotation_range = 'ALWAYS_ACTIVE'
+        constraint.use_relative_location = True
         bpy.context.view_layer.update()
         actual = roundtrip(root, 'pivot_explicit_result')
         assert tuple(actual.meshHierarchy[0].pivot) == (5,0,0)
@@ -433,7 +485,17 @@ def main():
         assert tuple(restored.meshHierarchy[0].pivot) == (2,0,0)
         assert tuple(restored.meshHierarchy[0].position) == (3,4,0)
         assert tuple(restored.geosets[0].meshes[0].vertices[0]) == (0,0,0)
-        return {'active_constraint_precedence': True, 'disabled_constraint_preserves_import': True}
+        constraint.influence = 1
+        constraint.offset = (0,0,0)
+        zero = roundtrip(root, 'pivot_explicit_zero')
+        assert tuple(zero.meshHierarchy[0].pivot) == (0,0,0), 'Active zero pivot must still override imported metadata'
+        assert tuple(zero.geosets[0].meshes[0].vertices[0]) == (2,0,0)
+        constraint.mute = True
+        muted = roundtrip(root, 'pivot_explicit_muted')
+        assert tuple(muted.meshHierarchy[0].pivot) == (2,0,0)
+        assert tuple(muted.geosets[0].meshes[0].vertices[0]) == (0,0,0)
+        return {'active_constraint_precedence': True, 'active_zero_precedence': True,
+                'disabled_and_muted_constraints_preserve_import': True}
 
     def pivot_import_mesh_radius():
         source, path = pivot_fixture('pivot_bounds')
@@ -451,8 +513,9 @@ def main():
         assert mesh.radius == 22.0, (mesh.radius, 'Native mesh vertices reach 22 after pivot compensation')
         assert tuple(actual.meshHierarchy[0].pivot) == (-18,0,0)
         assert snapshot(parent.data) == before, 'Export must not change the imported mesh'
-        helper = mesh_object('MESH_RADIUS_' + utils.stripOrderPrefix(parent.name), [(-50,0,0),(50,0,0),(0,1,0)], [(0,1,2)])
-        helper.parent = root
+        # Parenting owns the helper; its local radius 25 receives parent's X scale2.
+        helper = mesh_object('MESH_RADIUS_' + utils.stripOrderPrefix(parent.name), [(-25,0,0),(25,0,0),(0,1,0)], [(0,1,2)])
+        helper.parent = parent
         bpy.context.view_layer.update()
         manual = roundtrip(root, 'pivot_bounds_override')
         assert manual.geosets[0].meshes[0].radius == 50.0
@@ -478,12 +541,15 @@ def main():
                 obj.location = (start[0]+delta,start[1]+delta,start[2]+delta)
                 obj.keyframe_insert(data_path='location', frame=frame)
         key_path = output / 'pivot_locations.key'
-        addon.exportKey(root, scene, str(key_path))
+        keyexporter.exportKey(root, scene, str(key_path), target='JKDF2')
         key = keyloader.loadKey(str(key_path))
         assert len(key.nodes) == 2
-        positions = [[tuple(k.position) for k in n.keyframes] for n in key.nodes]
+        positions = [[tuple(n.keyframes[0].position), tuple(n.keyframes[-1].position)] for n in key.nodes]
         assert positions == [[(3,4,0),(4,5,1)],[(2,0,0),(3,1,1)]], positions
-        return {'saved_blend_pivots_preserved': True, 'key_locations': positions, 'pivot_not_subtracted_from_key': True}
+        playback = [assert_key_playback(obj, node, [i / 4 for i in range(41)])
+                    for obj, node in zip((parent, child), key.nodes)]
+        return {'saved_blend_pivots_preserved': True, 'key_endpoint_locations': positions,
+                'playback': playback, 'pivot_not_subtracted_from_key': True}
 
     def metadata():
         scene = bpy.context.scene
@@ -494,7 +560,10 @@ def main():
         errors = io.StringIO()
         with contextlib.redirect_stderr(errors):
             for value, expected in [("FFFF","FFFF"),("0xFFFF","FFFF"),("0X0001","01"),("0000","00"),
-                                    ("0x0","00"),("","FFFF"),("-1","FFFF"),("10000","FFFF"),("invalid","FFFF")]:
+                                    ("0x0","00"),("","FFFF"),("-1","FFFF"),
+                                    ("10000","010000"),("invalid","010000"),
+                                    ("0xFFFFFFFF","FFFFFFFF"),("100000000","0100000000"),
+                                    ("-1","0100000000"),("","FFFF")]:
                 scene.sith_key_types = value
                 actual = scene.sith_key_types
                 attempts.append({"input": value, "expected": expected, "actual": actual})
@@ -509,6 +578,55 @@ def main():
         assert int(model.meshHierarchy[0].flags) == 0x8000 and int(model.meshHierarchy[0].type) == 8
         return {"default": default_value, "attempts": attempts, "3do_flags_and_type": "roundtripped"}
 
+    def key_at(node, frame):
+        """Evaluate native flags and per-frame slopes at actual KEY timestamps."""
+        entries = node.keyframes
+        times = [entry.frame for entry in entries]
+        assert times and times[0] == 0 and all(a < b for a, b in zip(times, times[1:]))
+        entry = entries[max(0, bisect.bisect_right(times, frame) - 1)]
+        elapsed = frame - entry.frame
+        position = list(entry.position)
+        rotation = list(entry.orientation)
+        if entry.flags & keytypes.KeyframeFlag.PositionChange:
+            position = [v + d * elapsed for v, d in zip(position, entry.deltaPosition)]
+        if entry.flags & keytypes.KeyframeFlag.OrientationChange:
+            rotation = [v + d * elapsed for v, d in zip(rotation, entry.deltaRotation)]
+        return position, rotation
+
+    def assert_key_playback(obj, node, times):
+        """Compare serialized playback to Blender's local authored channels.
+
+        This uses no exporter conversion/sampling helper as an oracle. Native PYR
+        is Rz(yaw) Rx(pitch) Ry(roll); equivalent Euler branches are acceptable.
+        """
+        scene = bpy.context.scene
+        saved_frame, saved_subframe = scene.frame_current, scene.frame_subframe
+        worst_position = worst_rotation = 0.0
+        try:
+            for time in times:
+                frame = math.floor(time)
+                scene.frame_set(frame, subframe=time - frame)
+                position, pyr = key_at(node, time)
+                worst_position = max(worst_position, *(abs(a - b) for a, b in zip(position, obj.location)))
+                pitch, yaw, roll = map(math.radians, pyr)
+                actual = Matrix.Rotation(yaw, 3, 'Z') @ Matrix.Rotation(pitch, 3, 'X') @ Matrix.Rotation(roll, 3, 'Y')
+                expected = (obj.rotation_quaternion.normalized().to_matrix() if obj.rotation_mode == 'QUATERNION'
+                            else obj.rotation_euler.to_matrix())
+                error = max(abs(actual[row][column] - expected[row][column]) for row in range(3) for column in range(3))
+                worst_rotation = max(worst_rotation, error)
+                assert worst_position < 2e-5, (time, position, tuple(obj.location), worst_position)
+                assert worst_rotation < 0.0012, (time, pyr, worst_rotation)
+        finally:
+            scene.frame_set(saved_frame, subframe=saved_subframe)
+        return {'samples': len(times), 'exported_entries': len(node.keyframes),
+                'max_position_error': worst_position, 'max_rotation_matrix_error': worst_rotation}
+
+    def linear_channels(obj):
+        for curve in keyutils.getActionFCurves(obj):
+            for point in curve.keyframe_points:
+                point.interpolation = 'LINEAR'
+            curve.update()
+
     def key_roundtrip():
         scene = bpy.context.scene
         scene.sith_key_types = "0xFFFF"
@@ -521,15 +639,21 @@ def main():
             obj.keyframe_insert(data_path="location", frame=frame)
             obj.rotation_euler = (0,0,0)
             obj.keyframe_insert(data_path="rotation_euler", frame=frame)
-        path = output / "animation.key"
-        addon.exportKey(obj, scene, str(path))
-        key = keyloader.loadKey(str(path))
-        assert int(key.nodeTypes) == 0xFFFF
-        assert key.numJoints == 1 and len(key.nodes) == 1
-        assert key.numFrames == 11 and key.fps == 30
-        assert [k.frame for k in key.nodes[0].keyframes] == [0,10]
-        assert tuple(key.nodes[0].keyframes[-1].position) == (1,2,3)
-        return {"type": "FFFF", "joints": 1, "frames": [0,10], "last_position": [1,2,3]}
+        # Leave Blender's Bezier interpolation in place: adaptive fractional
+        # samples must reproduce its curve, not an assumed two-entry layout.
+        results = []
+        for target in ('JKDF2', 'MOTS'):
+            path = output / ('animation_' + target.lower() + '.key')
+            keyexporter.exportKey(obj, scene, str(path), target=target)
+            key = keyloader.loadKey(str(path))
+            assert int(key.nodeTypes) == 0xFFFF
+            assert key.numJoints == 1 and len(key.nodes) == 1
+            assert key.numFrames == 11 and key.fps == 30
+            assert key.nodes[0].keyframes[0].frame == 0 and key.nodes[0].keyframes[-1].frame == 10
+            assert tuple(key.nodes[0].keyframes[-1].position) == (1,2,3)
+            results.append({'target': target, **assert_key_playback(obj, key.nodes[0], [i / 8 for i in range(81)])})
+        return {"type": "FFFF", "joints": 1, "endpoint_frames": [0,10],
+                "last_position": [1,2,3], 'playback': results}
 
     def key_zero_coordinates():
         """A nonzero coordinate returning to zero must not retain the prior value."""
@@ -551,14 +675,17 @@ def main():
                     obj.rotation_euler = (value,0.0,0.0)
                     obj.keyframe_insert(data_path='rotation_euler', frame=frame)
             path = output / ('key_zero_' + mode.lower() + '.key')
-            addon.exportKey(obj, scene, str(path))
+            keyexporter.exportKey(obj, scene, str(path), target='JKDF2')
             key = keyloader.loadKey(path)
             last = key.nodes[0].keyframes[-1]
             assert max(abs(v) for v in last.position) < 1e-7, tuple(last.position)
             assert max(abs(v) for v in last.orientation) < 1e-5, tuple(last.orientation)
-            prior = key.nodes[0].keyframes[-2]
-            assert tuple(prior.deltaPosition) == (-1.0,-1.0,-1.0)
-            results.append({'rotation_mode':mode,'final_position':list(last.position),'final_pyr':list(last.orientation)})
+            assert tuple(key_at(key.nodes[0], 1)[0]) == (1.0,1.0,1.0)
+            return_points = [key_at(key.nodes[0], time)[0][0] for time in (1,1.25,1.5,1.75,2)]
+            assert all(a > b for a, b in zip(return_points, return_points[1:])), return_points
+            playback = assert_key_playback(obj, key.nodes[0], [i / 16 for i in range(33)])
+            results.append({'rotation_mode':mode,'final_position':list(last.position),
+                            'final_pyr':list(last.orientation), 'playback':playback})
         return {'returns_to_zero':results}
 
     def key_quaternion_turns():
@@ -579,23 +706,27 @@ def main():
                 obj.rotation_quaternion = Quaternion(blender_axis, math.radians(frame * 20.0))
                 obj.keyframe_insert(data_path='rotation_quaternion', frame=frame)
             path = output / ('key_turn_' + str(axis) + '.key')
-            addon.exportKey(obj, scene, str(path))
+            linear_channels(obj)
+            keyexporter.exportKey(obj, scene, str(path), target='JKDF2')
             key = keyloader.loadKey(path)
             frames = key.nodes[0].keyframes
-            worst = 0.0
-            for frame, kf in enumerate(frames):
-                want = [0.0,0.0,0.0]
-                want[axis] = frame * 20.0
-                worst = max(worst, *(abs(a-b) for a,b in zip(kf.orientation,want)))
-                assert worst < 0.001, (axis,frame,tuple(kf.orientation),want)
-                if frame == len(frames)-1:
-                    continue
-                # Evaluate stored native differentials at non-keyed times.
-                for fraction in (0.25,0.5,0.75):
-                    want[axis] = (frame+fraction)*20.0
-                    interpolated = [a+d*fraction for a,d in zip(kf.orientation,kf.deltaRotation)]
-                    assert max(abs(a-b) for a,b in zip(interpolated,want)) < 0.001
-            results.append({'axis_pyr':axis,'authored_degrees':720,'worst_degrees':worst})
+            # Quaternion component interpolation is not constant angular speed.
+            # Check actual authored motion densely and around each adaptive KEY
+            # interval; do not identify an entry's array index with its frame.
+            times = {i / 4 for i in range(145)}
+            for first, last in zip(frames, frames[1:]):
+                times.update(first.frame + (last.frame-first.frame)*f for f in (0.25,0.5,0.75))
+            playback = assert_key_playback(obj, key.nodes[0], sorted(times))
+            # At authored integer frames, all three axes must still travel the
+            # intended two full turns, not a backward long interval or a hold.
+            for frame in range(37):
+                _, rotation = key_at(key.nodes[0], frame)
+                angle = math.radians(frame * 20.0)
+                desired = Matrix.Rotation(angle, 3, 'XZY'[axis])
+                pitch, yaw, roll = map(math.radians, rotation)
+                actual = Matrix.Rotation(yaw, 3, 'Z') @ Matrix.Rotation(pitch, 3, 'X') @ Matrix.Rotation(roll, 3, 'Y')
+                assert max(abs(actual[r][c] - desired[r][c]) for r in range(3) for c in range(3)) < 0.0012
+            results.append({'axis_pyr':axis,'authored_degrees':720,'playback':playback})
         return {'continuous_turns':results}
 
     def key_explicit_euler_winding():
@@ -612,12 +743,18 @@ def main():
             obj.rotation_euler = (0.0,0.0,math.radians(degrees))
             obj.keyframe_insert(data_path='rotation_euler', frame=frame)
         path = output / 'key_euler_winding.key'
-        addon.exportKey(obj, scene, str(path))
+        linear_channels(obj)
+        keyexporter.exportKey(obj, scene, str(path), target='MOTS')
         key = keyloader.loadKey(path)
         frames = key.nodes[0].keyframes
         assert abs(frames[-1].orientation[1]-720.0) < 0.001
-        assert abs(frames[0].deltaRotation[1]-720.0) < 0.001
-        return {'final_yaw':frames[-1].orientation[1],'yaw_delta':frames[0].deltaRotation[1]}
+        worst = 0.0
+        for time in (0,0.125,0.25,0.5,0.75,0.875,1):
+            _, rotation = key_at(key.nodes[0], time)
+            worst = max(worst, abs(rotation[1] - 720.0 * time))
+        assert worst < 0.001
+        return {'final_yaw':frames[-1].orientation[1], 'max_unwrapped_yaw_error':worst,
+                'playback':assert_key_playback(obj, key.nodes[0], [i/8 for i in range(9)])}
 
     def material_name_delimiters():
         # Whitespace-based consumers need index and filename as separate fields,
@@ -672,8 +809,8 @@ def main():
             matmod._read_mipmap(truncated, ci)
             try:
                 matmod._read_mipmap(truncated, ci)
-            except EOFError:
-                pass
+            except ImportError as exc:
+                assert 'Truncated MAT data' in str(exc), str(exc)
             else:
                 raise AssertionError("Truncated undecoded mipmap was accepted")
         path = output / ("indexed_palette.mat" if with_palette else "indexed_no_palette.mat")

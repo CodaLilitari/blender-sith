@@ -33,6 +33,7 @@ BASE_URL = "https://ftp.blender.org/release/Blender5.2/"
 # Verified against the official blender-5.2.3.sha256 on 2026-11-09.
 DMG_SHA256 = "acc05374485a272342d4b323c15ac01953e7f697da2f1bad8af9c3bf087267a4"
 EXPECTED_TESTS = 29
+REGRESSION_SCHEMA = "blender-sith-agentic-regression-v2"
 
 
 def digest(path):
@@ -80,18 +81,247 @@ def checked_output(path, runner_temp, source):
     return resolved
 
 
-def validate_native_result(receipt, report):
+def validate_native_result(receipt, report, expected_hashes):
     platform_info = receipt.get("platform", {})
     runtime = receipt.get("runtime", {})
     tests = report.get("tests", [])
-    if (receipt.get("status") != "passed" or receipt.get("source_unchanged") is not True
+    if (report.get("schema") != REGRESSION_SCHEMA
+            or receipt.get("status") != "passed" or receipt.get("source_unchanged") is not True
             or platform_info != {"system": "Darwin", "machine": "arm64"}
             or runtime.get("route") != "blender"
             or runtime.get("blender") not in (BLENDER_VERSION, BLENDER_VERSION + " LTS")
             or receipt.get("regression") != {"passed": EXPECTED_TESTS, "failed": 0, "addon_source_unchanged": True}
+            or receipt.get("source_before_sha256") != expected_hashes
+            or receipt.get("source_after_sha256") != expected_hashes
+            or report.get("addon_sha256") != expected_hashes or report.get("addon_source_unchanged") is not True
             or report.get("passed") != EXPECTED_TESTS or report.get("failed") != 0
             or len(tests) != EXPECTED_TESTS or any(t.get("passed") is not True for t in tests)):
         raise ValueError(f"Expected {EXPECTED_TESTS} passing checks on native ARM64 macOS Blender " + BLENDER_VERSION)
+
+
+def companion_test_command(source):
+    # Recursive discovery also imports tests/app, which requires Blender.
+    modules = sorted(path.stem for path in (source / "tests").glob("test_*.py"))
+    if not modules:
+        raise ValueError("No companion unit tests found")
+    return [sys.executable, "-B", "-m", "unittest", "-v", *modules]
+
+
+def package_source_hashes(archive):
+    with zipfile.ZipFile(archive) as package:
+        names = package.namelist()
+        if len(names) != len(set(names)):
+            raise ValueError("Duplicate extension archive members")
+        result = {name: hashlib.sha256(package.read(name)).hexdigest()
+                  for name in names if name.endswith((".py", ".toml"))}
+    if "__init__.py" not in result or "blender_manifest.toml" not in result:
+        raise ValueError("Extension archive lacks its root package files")
+    return result
+
+
+def input_files(root):
+    """Enumerate regular inputs, propagating incomplete scans and rejecting links."""
+    def failed(error):
+        raise error
+    if root.is_symlink() or getattr(root, "is_junction", lambda: False)():
+        raise ValueError("Linked validation inputs are not permitted")
+    if root.is_file():
+        return [root]
+    if not root.is_dir():
+        raise ValueError("Missing validation input: " + str(root))
+    result = []
+    for directory, dirs, files in os.walk(root, onerror=failed):
+        dirs[:] = sorted(name for name in dirs if name not in ("__pycache__", ".git"))
+        for name in [*dirs, *files]:
+            path = Path(directory) / name
+            if path.is_symlink() or getattr(path, "is_junction", lambda: False)():
+                raise ValueError("Linked validation inputs are not permitted: " + str(path))
+        for name in sorted(files):
+            path = Path(directory) / name
+            if path.suffix in (".pyc", ".pyo"):
+                continue
+            if not path.is_file():
+                raise ValueError("Non-regular validation input: " + str(path))
+            result.append(path)
+    return result
+
+
+UPSTREAM_INPUTS = ("tests", "scripts", "docs", "README.md", "USAGE.md", "LICENSE")
+
+
+def harness_hashes(stage):
+    return {path.relative_to(stage).as_posix(): digest(path)
+            for name in UPSTREAM_INPUTS for path in input_files(stage / name)}
+
+
+def addon_hashes(addon):
+    return {path.relative_to(addon).as_posix(): digest(path)
+            for path in input_files(addon) if path.suffix in (".py", ".toml")}
+
+
+def stage_upstream_suite(source, archive, target):
+    """Copy only test dependencies; the add-on comes exclusively from the ZIP."""
+    source, target = source.resolve(), target.resolve()
+    if target.is_relative_to(source) or any((p / ".git").exists() for p in (target, *target.parents)):
+        raise ValueError("Upstream suite staging must be outside any checkout")
+    target.mkdir()
+    for name in UPSTREAM_INPUTS:
+        original = source / name
+        paths = input_files(original)
+        if original.is_dir():
+            (target / name).mkdir()
+        for path in paths:
+            destination = target / path.relative_to(source)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, destination)
+    extract_package(archive, target / "sith")
+    if addon_hashes(target / "sith") != package_source_hashes(archive):
+        raise ValueError("Staged add-on differs from exact package")
+
+
+def write_upstream_bootstrap(stage, suite, bootstrap, report):
+    if suite not in ("core", "app"):
+        raise ValueError("Expected upstream core or app suite")
+    # Execute the copied helper so the receipt hashes include the code producing it.
+    text = ("import runpy\nfrom pathlib import Path\n"
+            f"helper = runpy.run_path({str(stage / 'scripts/ci_platform_validation.py')!r})\n"
+            f"helper['upstream_suite_entrypoint'](Path({str(stage)!r}), {suite!r}, Path({str(report)!r}))\n")
+    with bootstrap.open("x", encoding="utf-8", newline="\n") as stream:
+        stream.write(text)
+
+
+def upstream_suite_entrypoint(stage, suite, report_path):
+    """Observe the unmodified upstream runner in its own Python/Blender process."""
+    import importlib
+    import runpy
+    import traceback
+    import unittest
+
+    if sys.flags.optimize or suite not in ("core", "app"):
+        raise ValueError("Upstream validation requires assertions and a named suite")
+    sys.dont_write_bytecode = True
+    stage = stage.resolve()
+    sys.path.insert(0, str(stage))
+    record = {"schema": "blender-sith-upstream-suite-v1", "status": "failed", "suite": suite,
+              "platform": {"system": platform.system(), "machine": platform.machine()},
+              "python": sys.version, "executable": sys.executable,
+              "source_before_sha256": addon_hashes(stage / "sith"),
+              "harness_before_sha256": harness_hashes(stage)}
+    runs = []
+    original_runner = unittest.TextTestRunner
+
+    def test_ids(tests):
+        for item in tests:
+            if isinstance(item, unittest.TestSuite):
+                yield from test_ids(item)
+            else:
+                yield item.id()
+
+    class RecordingRunner(original_runner):
+        def run(self, tests):
+            ids = list(test_ids(tests))
+            result = super().run(tests)
+            runs.append({"discovered_tests": ids, "tests_run": result.testsRun,
+                         "failures": [{"test": test.id(), "traceback": detail} for test, detail in result.failures],
+                         "errors": [{"test": test.id(), "traceback": detail} for test, detail in result.errors],
+                         "skipped": [{"test": test.id(), "reason": reason} for test, reason in result.skipped],
+                         "expected_failures": [{"test": test.id(), "traceback": detail}
+                                               for test, detail in result.expectedFailures],
+                         "unexpected_successes": [test.id() for test in result.unexpectedSuccesses],
+                         "successful": result.wasSuccessful()})
+            return result
+
+    try:
+        in_blender = "bpy" in sys.modules
+        if suite == "app":
+            import bpy
+            record["runtime"] = {"route": "blender", "blender": bpy.app.version_string,
+                                 "background": bpy.app.background}
+            if not in_blender or not bpy.app.background:
+                raise ValueError("App validation requires native background Blender")
+        else:
+            record["runtime"] = {"route": "python"}
+            if in_blender:
+                raise ValueError("Core validation requires standalone Python")
+        addon = importlib.import_module("sith")
+        record["loaded_addon"] = str(Path(addon.__file__).resolve())
+        if record["loaded_addon"] != str(stage / "sith/__init__.py"):
+            raise ValueError("Upstream runner imported a different add-on")
+        unittest.TextTestRunner = RecordingRunner
+        sys.argv = [str(stage / "tests/run.py"), "--", "--suite", suite]
+        runpy.run_path(str(stage / "tests/run.py"), run_name="__main__")
+        record["runner_completed"] = True
+    except BaseException:
+        record["exception"] = traceback.format_exc()
+        raise
+    finally:
+        unittest.TextTestRunner = original_runner
+        record["runner_invocations"] = len(runs)
+        if len(runs) == 1:
+            record.update(runs[0])
+        record["source_after_sha256"] = addon_hashes(stage / "sith")
+        record["harness_after_sha256"] = harness_hashes(stage)
+        record["source_unchanged"] = record["source_before_sha256"] == record["source_after_sha256"]
+        record["harness_unchanged"] = record["harness_before_sha256"] == record["harness_after_sha256"]
+        if (record.get("runner_completed") and len(runs) == 1 and record.get("successful")
+                and record["tests_run"] == len(record["discovered_tests"])
+                and record["tests_run"] > len(record["skipped"]) + len(record["expected_failures"])
+                and record["source_unchanged"] and record["harness_unchanged"]):
+            record["status"] = "passed"
+        report_path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    if record["status"] != "passed":
+        raise RuntimeError("Upstream suite did not validate unchanged package bytes")
+
+
+def validate_upstream_result(report, expected_hashes, stage, suite):
+    total = report.get("tests_run")
+    skipped, expected = report.get("skipped", []), report.get("expected_failures", [])
+    if (report.get("schema") != "blender-sith-upstream-suite-v1" or report.get("status") != "passed"
+            or report.get("suite") != suite or report.get("runner_invocations") != 1
+            or report.get("runner_completed") is not True or report.get("successful") is not True
+            or type(total) is not int or total <= len(skipped) + len(expected)
+            or total != len(report.get("discovered_tests", []))
+            or report.get("failures") != [] or report.get("errors") != []
+            or report.get("unexpected_successes") != []
+            or report.get("source_before_sha256") != expected_hashes
+            or report.get("source_after_sha256") != expected_hashes
+            or report.get("source_unchanged") is not True or report.get("harness_unchanged") is not True
+            or report.get("harness_before_sha256") != report.get("harness_after_sha256")
+            or not report.get("harness_before_sha256")
+            or report.get("loaded_addon") != str((stage / "sith/__init__.py").resolve())):
+        raise ValueError("Upstream suite did not verify the complete unchanged exact package: " + suite)
+
+
+def run_upstream_suites(source, archive, blender, output, evidence, env, system, machine, blender_version):
+    stage = output / "upstream-suite"
+    stage_upstream_suite(source, archive, stage)
+    expected_hashes = package_source_hashes(archive)
+    expected_harness = harness_hashes(stage)
+    results = {}
+    for suite in ("core", "app"):
+        report_path = evidence / ("upstream-" + suite + ".json")
+        bootstrap = evidence / ("upstream-" + suite + "-bootstrap.py")
+        write_upstream_bootstrap(stage, suite, bootstrap, report_path)
+        if suite == "core":
+            command = [sys.executable, "-B", str(bootstrap)]
+        else:
+            command = [str(blender), "--background", "--factory-startup", "--offline-mode", "--threads", "2",
+                       "--python-exit-code", "1", "--python", str(bootstrap)]
+        run_logged(command, "upstream-" + suite, evidence, stage, env, 600)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        validate_upstream_result(report, expected_hashes, stage, suite)
+        runtime = report.get("runtime", {})
+        if (report.get("platform") != {"system": system, "machine": machine}
+                or report["harness_before_sha256"] != expected_harness
+                or (suite == "core" and runtime != {"route": "python"})
+                or (suite == "app" and (runtime.get("route") != "blender" or runtime.get("background") is not True
+                    or runtime.get("blender") not in (blender_version, blender_version + " LTS")))):
+            raise ValueError("Upstream suite runtime or test inputs differ from the selected native job")
+        results[suite] = {"status": "passed", "tests_run": report["tests_run"],
+                          "skipped": report["skipped"], "expected_failures": report["expected_failures"],
+                          "report": report_path.name, "report_sha256": digest(report_path),
+                          "bootstrap_sha256": digest(bootstrap)}
+    return results
 
 
 def run_logged(command, name, evidence, cwd, env, timeout, *, check=True):
@@ -155,7 +385,7 @@ def main(argv=None):
         directory = output / "config" / suffix.lower()
         directory.mkdir(parents=True)
         env["BLENDER_USER_" + suffix] = str(directory)
-    receipt = {"schema": "blender-sith-native-macos-ci-v1", "status": "failed",
+    receipt = {"schema": "blender-sith-native-macos-ci-v2", "status": "failed",
                "commit": os.environ.get("GITHUB_SHA"), "run_id": os.environ.get("GITHUB_RUN_ID"),
                "system": platform.system(), "machine": platform.machine(),
                "macos": platform.mac_ver()[0], "expected_blender": BLENDER_VERSION,
@@ -164,8 +394,7 @@ def main(argv=None):
     mount = output / "mount"
     mount_attempted = False
     try:
-        run_logged([sys.executable, "-B", "-m", "unittest", "discover", "-s", str(ROOT / "tests"),
-                    "-p", "test_*.py", "-v"], "unit-tests", evidence, output, env, 300)
+        run_logged(companion_test_command(ROOT), "unit-tests", evidence, ROOT / "tests", env, 300)
 
         stage = output / "staged-source"
         stage.mkdir()
@@ -192,6 +421,7 @@ def main(argv=None):
         if archive_hash != package_receipt["archive"]["sha256"]:
             raise ValueError("Package receipt and archive hash disagree")
         receipt["archive"] = {"name": archive.name, "sha256": archive_hash, "size": archive.stat().st_size}
+        source_hashes = package_source_hashes(archive)
         extracted = output / "exact-package"
         extract_package(archive, extracted)
 
@@ -227,7 +457,9 @@ def main(argv=None):
                     "--threads", "2", "--timeout", "300"], "native-regression", evidence, output, env, 360)
         launcher_receipt = json.loads((regression / "receipt.json").read_text(encoding="utf-8"))
         report = json.loads((regression / "results" / "regression.json").read_text(encoding="utf-8"))
-        validate_native_result(launcher_receipt, report)
+        validate_native_result(launcher_receipt, report, source_hashes)
+        receipt["upstream_suites"] = run_upstream_suites(
+            ROOT, archive, blender, output, evidence, env, "Darwin", "arm64", BLENDER_VERSION)
         if digest(archive) != archive_hash:
             raise ValueError("Tested archive changed during validation")
         receipt.update(status="passed", runtime=launcher_receipt["runtime"], regression=launcher_receipt["regression"])
