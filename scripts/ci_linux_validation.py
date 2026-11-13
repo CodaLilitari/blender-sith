@@ -20,9 +20,10 @@ import subprocess
 import sys
 import tarfile
 import tomllib
-import zipfile
 
-from ci_platform_validation import checked_output, checksum_for_asset, digest, extract_package, run_logged
+from ci_platform_validation import (checked_output, checksum_for_asset, companion_test_command, digest,
+                                    extract_package, package_source_hashes, REGRESSION_SCHEMA,
+                                    run_logged, run_upstream_suites)
 
 ROOT = Path(__file__).resolve().parents[1]
 BLENDER_VERSION = '5.1.2'
@@ -51,7 +52,8 @@ def platform_manifest(raw, variant):
 def validate_native_result(receipt, report, expected_hashes):
     tests = report.get('tests', [])
     runtime = receipt.get('runtime', {})
-    if (receipt.get('status') != 'passed' or receipt.get('source_unchanged') is not True
+    if (report.get('schema') != REGRESSION_SCHEMA
+            or receipt.get('status') != 'passed' or receipt.get('source_unchanged') is not True
             or receipt.get('platform') != {'system': 'Linux', 'machine': 'x86_64'}
             or runtime.get('route') != 'blender' or runtime.get('blender') != BLENDER_VERSION
             or receipt.get('regression') != {'passed': EXPECTED_TESTS, 'failed': 0, 'addon_source_unchanged': True}
@@ -99,15 +101,14 @@ def main(argv=None):
         directory = output / 'config' / suffix.lower()
         directory.mkdir(parents=True)
         env['BLENDER_USER_' + suffix] = str(directory)
-    receipt = {'schema': 'blender-sith-native-linux-ci-v1', 'status': 'failed',
+    receipt = {'schema': 'blender-sith-native-linux-ci-v2', 'status': 'failed',
                'commit': os.environ.get('GITHUB_SHA'), 'run_id': os.environ.get('GITHUB_RUN_ID'),
                'system': platform.system(), 'machine': platform.machine(),
                'expected_blender': BLENDER_VERSION, 'expected_checks': EXPECTED_TESTS,
                'runtime_url': BASE_URL + ASSET, 'runtime_sha256': ARCHIVE_SHA256,
                'scope': 'all four ZIP schemas; native exact Linux package; no UI or game-runtime claim'}
     try:
-        run_logged([sys.executable, '-B', '-m', 'unittest', 'discover', '-s', str(ROOT / 'tests'),
-                    '-p', 'test_*.py', '-v'], 'unit-tests', evidence, output, env, 300)
+        run_logged(companion_test_command(ROOT), 'unit-tests', evidence, ROOT / 'tests', env, 300)
         addon = ROOT / 'sith'
         if addon.is_symlink() or any(p.is_symlink() for p in addon.rglob('*')):
             raise ValueError('Source symlinks are not permitted')
@@ -133,9 +134,7 @@ def main(argv=None):
             archive_hash = digest(archive)
             if archive_hash != build_receipt['archive']['sha256']:
                 raise ValueError('Package receipt and archive hash disagree: ' + variant)
-            with zipfile.ZipFile(archive) as package:
-                source_hashes[variant] = {n: hashlib.sha256(package.read(n)).hexdigest()
-                                          for n in package.namelist() if n.endswith(('.py', '.toml'))}
+            source_hashes[variant] = package_source_hashes(archive)
             package_records.append({'platform': variant, 'name': archive.name,
                                     'sha256': archive_hash, 'size': archive.stat().st_size})
         receipt['packages'] = package_records
@@ -176,6 +175,8 @@ def main(argv=None):
         launcher = json.loads((regression / 'receipt.json').read_text(encoding='utf-8'))
         report = json.loads((regression / 'results' / 'regression.json').read_text(encoding='utf-8'))
         validate_native_result(launcher, report, source_hashes['linux-x64'])
+        receipt['upstream_suites'] = run_upstream_suites(
+            ROOT, archive, blender, output, evidence, env, 'Linux', 'x86_64', BLENDER_VERSION)
         if any(digest(packages / p['name']) != p['sha256'] for p in package_records):
             raise ValueError('A schema-validated or tested archive changed')
         receipt.update(status='passed', archive=linux_package, runtime=launcher['runtime'], regression=launcher['regression'])

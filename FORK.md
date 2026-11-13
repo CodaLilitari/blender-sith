@@ -1,118 +1,62 @@
 # Blender-Sith Agentic
 
-A focused community fork of [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith), based on upstream commit [`ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`](https://github.com/smlu/blender-sith/commit/ecc90131bcfdeabd400225e8a72ce94cbff1ec5c). The original Git history, copyright notices and GPL-3.0-or-later license are retained. Fork changes were developed by Coda in collaboration with Andrei for the JK/MotS Model Workshop.
+This community fork integrates [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith) at upstream [`01ff4bd85498074e6f936d9adbbcc93817ca712d`](https://github.com/smlu/blender-sith/commit/01ff4bd85498074e6f936d9adbbcc93817ca712d), Coda's reviewed [hexadecimal-property change (PR16)](https://github.com/smlu/blender-sith/pull/16), [native-pivot change (PR23)](https://github.com/smlu/blender-sith/pull/23), and retained automation/package tooling. Original history, copyright notices and GPL-3.0-or-later licensing are preserved. Coda collaborates with Andrei on the fork and JK/MotS Model Workshop; the broader resource core, native MAT writer, recovery and animation architecture remain attributed to upstream.
 
-Current extension version: `1.0.4`, display name: **Blender Sith (Coda)**; distribution release: `v1.0.4-coda.1`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
+**Release:** extension `1.1.0`, display name **Blender Sith (Coda)**, distribution `v1.1.0-coda.1`. Exact-package validation passed; see the 1.1.0 release record and matching package receipts. See [matching packages](docs/platform-builds.md#latest-install-route). Checkouts, release ZIPs and installed extensions have separately recorded identities.
 
-Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
+Source distribution remains on [GitHub](https://github.com/CodaLilitari/blender-sith) and [GitLab](https://gitlab.com/codalilitari/blender-sith). Verify each host's exact revision before treating copies as equivalent. The extension ID is `sith`; use one edition in a given Blender extension repository. Blender itself is not forked.
 
-This fork improves model export, scripted metadata assignment and MAT reading. It also supplies an optional [local MCP companion](docs/MCP.md) for structured 3DO inspection, geometry-only conversion, regression and packaging. The ordinary extension does not require it. The upstream UI and import/export entry points remain available. Synthetic regression checks cover 3DO 2.1, KEY and MAT behavior for JK/MotS workflows; they do not establish retail-game or multiplayer acceptance and do not cover level authoring.
+## What this integration brings
 
-## Changes
+- **Native MAT writing:** encode inspected baked images or a Material's complete cel bindings, with explicit encoding and mip policy. Indexed output requires the real CMP. The API default `RGBA32` is not a JK/MotS compatibility recommendation; RGB565 remains a separately tested accelerated-renderer choice. Procedural shaders still need an image bake.
+- **KEY export:** supported sparse axes, fractional timing, held segments and adaptive curve sampling, preserving explicit zero returns and authored Euler winding. Select `target='JKDF2'` or `'MOTS'`; the default is `IJIM`. Generic/CUSTOM output does not certify an engine contract.
+- **Import and resource safety:** strict parsing by default, explicit incomplete-file recovery with diagnostics, material/image ownership checks and validation before replacing output. Recovery does not reconstruct missing source records or palette colors.
+- **Format fidelity:** UV-unit metadata, explicit/custom corner normals, supported reflected winding and normal scaling, linear vertex-color reads, float-preserving text, and the upstream 3DO 2.2 RGB writer/reader correction.
+- **Testing boundaries:** real codecs run without Blender in the upstream core suite; scene adapters run in real background Blender. Fork automation retains bounded processes, isolated preferences, exact source/archive receipts and external output directories.
 
-### Native radius and pivot preservation (1.0.4)
+Root-level `sith.export3do` and `sith.exportKey` are no longer the scripting API. Use explicit `model3doExporter`, `keyExporter` and `matExporter` modules as shown in [agent usage](docs/agent-use.md). The optional [local MCP companion](docs/MCP.md) remains separate from the Blender extension. It provides bounded inspection, geometry-only conversion, regression and packaging; it is not the textured native-import route or an interactive scene editor.
 
-Automatic radius now follows the assembled exported native rest geometry,
-including accumulated hierarchy transforms and each node's own pivot. The
-radius override remains authoritative. New 3DO imports preserve native pivots
-as metadata; export reverses their temporary mesh bake and restores the pivots.
-Explicit PivotConstraint editing takes precedence. Visible geometry and weapon
-attachment matrices are checked separately. Older saved blends which already
-lost pivots require re-import from a source retaining them or verified rig repair.
+## Native pivots, attachments and bounds
 
-Red's radius workaround and archived attachment findings led to the reproductions.
-Coda implemented and independently checked the repairs; this credits the report
-without relabelling it as an authored add-on patch. See the
-[1.0.4 release record](docs/release-1.0.4-coda.1.md) for exact evidence and limits.
+New imports preserve native pivots as metadata; export compensates for their temporary mesh bake and restores the native values. Explicit authored PivotConstraint editing takes precedence. Visible geometry and weapon attachment matrices need separate checks: a surface-preserving bake can still move an attachment. Older saved blends which already lost pivots require re-import from an intact native source or a separately verified rig repair.
 
-### Platform refresh and additional import/export fixes
+Automatic model radius follows assembled native rest geometry when no authored radius exists. An authored model `RADIUS` is preserved as a collision-default choice and need not enclose every visible point. Mesh culling radii must enclose their emitted local vertices. Do not enlarge an intentional collision radius to satisfy a visual-bound test. Bounds across animation poses remain a separate concern.
 
-The [2026-11-01 source audit](docs/fork-audit-2026-11-01.md) confirmed that current
-upstream was already an ancestor of this fork. The fork retains its original
-fixes below. Darth Martyr's independently
-authored material-index separator fix is retained with its source commit and
-author attribution. Long MAT filenames remain separate from their index in
-whitespace-based readers.
+Red's reported radius workaround and archived weapon-attachment findings led to the original reproductions. Coda implemented and checked the fork repair; that credit does not relabel Red's report as an authored add-on patch. The [1.0.4 release record](docs/release-1.0.4-coda.1.md) preserves the historical measurements, including six-decimal serialized radius values. New float serialization requires new output hashes and numeric comparisons.
 
-A newly reproduced indexed MAT issue is also repaired: without a CMP palette,
-the importer now consumes each cel's mip bytes before reading the next cel.
-Placeholder dimensions and transparency metadata stay intact, and truncated
-skipped data raises an error. Palette-present decoding remains unchanged.
+## Normals, colors and old scenes
 
-The same add-on code serves Windows x64, Linux x64, macOS arm64 and the universal
-Python package. Platform editions specialize their extension manifest; they do
-not fork the format implementation. Packaging is deterministic and includes the original GPL
-license. The bounded regression launcher isolates Blender preferences, limits
-threads by default, records hashes and results, and refuses output inside Git
-checkouts. These are workflow and resource improvements, not measured renderer
-speedups. The current synthetic matrix has 29 checks, including native radius/pivot
-regressions and the retained KEY checks for coordinates returning to zero, continuous quaternion turns and
-explicit Euler winding. The ten-check results below and the 13-check matrix from
-the [2026-11-01 audit](docs/fork-audit-2026-11-01.md) remain historical evidence.
+The integrated exporter uses position, color and normal when merging vertices. Custom normals and explicitly sharp edges use corner normals and retain their necessary splits. Ordinary flat-shading flags retain geometric vertex normals plus separate face normals; they do not force every polygon corner into its own vertex. UVs remain independently indexed. Inspect native face/vertex normals and the actual exported vertex budget.
 
-The earlier 1.0.2 platform record reports native Linux and Windows Blender 5.1.2
-background results, and all 13 checks passing for its exact Linux package under
-Blender 5.2.3 LTS. Those results do not validate a new release artifact. The
-`v1.0.3-coda.2` [release record](docs/release-1.0.3-coda.2.md) provides the exact
-package hashes and runtime matrix. Its Mac ZIP passed native ARM64 macOS 15.8.2
-execution under Blender 5.2.3 LTS, including all 16 synthetic checks and official
-extension validation. Interactive installation, game playback and multiplayer
-remain separate acceptance checks. Optional MCP unit tests are part of the
-historical 52-test suite. The current 1.0.4 unit suite has 58 cases; it does not
-add a live MCP-client integration claim.
+SMLiberator's [upstream issue 13](https://github.com/smlu/blender-sith/issues/13) documented the sharp-edge/automatic-merge problem and budget tradeoff. The original Coda patch implemented normal-aware merging; the later upstream representation distinguishes ordinary face shading from explicit/custom splits. Neither attribution claims the original discovery or an optional merge-control UI. The historical flat-cube result of 24 vertices is not a universal requirement for the current representation.
 
-### Preserve the normals Blender actually displays
+Vertex colors now come from Blender's linear RNA values for byte and float layers. Older scenes manually compensated for the former sRGB byte path need reassessment against native values and rendered appearance. Newly imported UV-domain metadata avoids multiplying pixel UVs by image dimensions twice; old scenes without that metadata require comparison with their source, not a guessed rescale. Importing custom vertex normals is an explicit option.
 
-The upstream exporter merges vertices by position and color and writes BMesh vertex normals. That loses sharp-face, sharp-edge and custom corner-normal distinctions. Two disconnected triangles sharing positions can collapse six vertices into four, assigning the wrong normals to corners. A flat-shaded cube becomes eight smoothed vertices.
+Visible modifiers, active shape-key deformation and unsupported transform/animation state can fail deliberately instead of silently exporting base geometry. Prepare a duplicate with the intended operations applied/baked. Supported reflected winding is handled, but arbitrary shear, parent inverses/delta transforms or nonuniform rotated-parent combinations are not a general rig-baking feature. Do not blindly apply transforms to an animation master.
 
-SMLiberator reported the sharp-edge/automatic-merge problem in [upstream issue 13](https://github.com/smlu/blender-sith/issues/13) on 10 October 2025, including the tradeoff between preserving discontinuities and the exported vertex budget. This patch implements normal-aware merging and checks that budget consequence explicitly; it does not claim the original discovery or introduce the optional merge-control UI proposed in that report.
+## Hexadecimal metadata
 
-The fork reads `Mesh.corner_normals` in the original polygon/loop order and uses position, color **and normal** as the vertex key. Coincident corners merge only when all three agree. UVs remain independently indexed. A flat or all-sharp cube exports 24 vertices; a smooth cube still exports eight. This is necessary vertex splitting, so inspect the exported vertex budget after hardening edges.
+The retained `HexProperty` correction normalizes before applying the field's digit budget. Bare and `0x`-prefixed values use uppercase canonical digits and the declared padding; malformed, negative and overflowing values preserve the previous value. Unset fields expose their declared defaults, including `FFFF` for KEY node types and `01` for hierarchy node type. Existing explicit values remain explicit.
 
-The read is based on Blender's [documented corner-normal representation](https://docs.blender.org/api/5.0/bpy.types.Mesh.html#bpy.types.Mesh.corner_normals). It covers normals already present on the source mesh; modifier evaluation is a separate issue below.
+Use registered properties and readback assertions; raw ID-property writes bypass the setter. A KEY node-type mask identifies type bits, not node indices. Metadata acceptance is not a playback test. See [agent usage](docs/agent-use.md#metadata-in-automation).
 
-### Make hexadecimal metadata predictable
+## Validation status and historical evidence
 
-`HexProperty` now normalizes before applying its digit budget. A four-digit field accepts `FFFF`, `0xFFFF` and zero-padded equivalents without RNA string-length callback errors. Values use uppercase canonical digits and the existing even-digit padding. Negative, malformed and out-of-range values leave the previous value unchanged.
+The [1.1.0 release record](docs/release-1.1.0-coda.1.md) records completed package and native validation. Keep three results separate: upstream no-Blender `core`, real Blender `app`, and bounded fork/package checks. Record the source revision and local changes, exact ZIP hashes, measured runtimes, failures and skips. Configured CI is not a successful run. [Test boundaries](tests/README.md) and [agent commands](docs/agent-use.md) describe the checks.
 
-Unset properties now expose their declared defaults: KEY high-priority node types are `FFFF`, hierarchy node type is `01`, and unspecified node flags are zero. This is an intentional behavior correction; previously the custom getter returned an empty string even when a default was declared. Saved explicit values remain explicit. Direct writes to Blender's raw ID-property dictionary bypass the setter, so use the registered properties in scripts.
+The original fork started at upstream `ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`. Its retained ten-check comparison on `bpy` 5.1.2 reported four passes/six failures upstream and ten passes in the focused fork. The [upstream receipt](tests/evidence/upstream-bpy-5.1.2.json), [original fork receipt](tests/evidence/coda-bpy-5.1.2.json) and [four-observation probe](tests/evidence/remaining-limitations-bpy-5.1.2.json) retain those source/harness identities. They do not describe today's core or prove current normal/color semantics.
 
-## Validation
+The [2026-11-01 audit](docs/fork-audit-2026-11-01.md), [1.0.3 platform record](docs/release-1.0.3-coda.2.md), [KEY correction notes](docs/key-export-corrections.md), and [1.0.4 release record](docs/release-1.0.4-coda.1.md) remain historical. In particular, 1.0.4's 29-check packages cannot validate 1.1.0. Darth Martyr's material-index separator repair retains its original author/source attribution. Indexed MAT cel consumption without a CMP remains a structural repair, not recovered colors.
 
-The current suite has 29 synthetic checks. Consult the `v1.0.4-coda.1`
-[release results](docs/release-1.0.4-coda.1.md) for runs against its exact packages; the retained comparison below is
-the historical ten-check baseline, not a claim that only ten checks remain.
+## Remaining model-delivery checks
 
-Run [the background regression suite](docs/agent-use.md). It creates synthetic geometry and a small animation, exports files and parses them back. It needs no commercial game data, model assets or network. Retained machine-readable results are [upstream](tests/evidence/upstream-bpy-5.1.2.json) and [fork candidate](tests/evidence/coda-bpy-5.1.2.json); both record the same harness hash and their exact source hashes.
-
-On Blender's `bpy` 5.1.2 runtime, the same ten checks returned:
-
-| Check | Upstream | Fork |
-|---|---:|---:|
-| Disconnected coincident vertices with different normals | Fail | Pass |
-| Flat-shaded cube | Fail | Pass |
-| Smooth-shaded cube | Pass | Pass |
-| Smooth cube with sharp edges | Fail | Pass |
-| Custom per-corner normals | Fail | Pass |
-| Mixed n-gon and disconnected faces with distinct corner normals | Fail | Pass |
-| UV seams, absolute UVs, materials, byte colors, face flags/modes | Pass | Pass |
-| Parent/child hierarchy and model offset | Pass | Pass |
-| Hex metadata prefix, default and range behavior | Fail | Pass |
-| Animated KEY serialization/reparse | Pass | Pass |
-
-Source mesh snapshots and add-on source hashes remained unchanged during the tests. Numeric normal comparisons allow the six-decimal precision of the 3DO writer. The existing sRGB byte-color export behavior is preserved; this patch does not redefine color management. Results are evidence for these synthetic contracts, not retail runtime, multiplayer interoperability or every Blender version. The upstream minimum is Blender 5.0; this run used 5.1.2.
-
-The [original four-observation workflow probe](tests/evidence/remaining-limitations-bpy-5.1.2.json) was also rerun against this candidate. It reported the normal and metadata problems resolved, with modifier evaluation and shared-mesh duplication still observed. That observation run is deliberately distinct from the ten-check regression suite.
-
-## Known limitations and working alternatives
-
-- **Unapplied modifiers:** the exporter still reads the base mesh. Use a prepared export duplicate with the desired modifiers applied or an evaluated-mesh conversion before exporting. Keep the editable original. Weighted-normal modifiers must be applied if their result is to become source custom normals.
-- **Object transforms:** automatic radius now follows the serialized hierarchy. General transform baking, reflected winding and animation edits still need inspection. Apply non-uniform or negative scale on an export duplicate when appropriate, inspect normals/winding, and recheck attachment matrices. The radius fix is not a general rig repair.
-- **Shared mesh datablocks:** two hierarchy objects can still export two mesh records. That is an optimization opportunity, not proof the model is invalid. Object scale and mesh properties must be considered before introducing reuse.
-- **Additional geosets/LODs:** the Blender scene importer remains limited to geoset 0. Preserve other geosets through a format-aware writer or a separately checked process.
-- **3DO 2.2:** an additional synthetic experiment found an existing writer/reader disagreement for RGB face extra light: the writer uses a parenthesized triple, while the loader expects three space-separated values. Upstream labels 2.2 as IJIM RGB. It is not fixed or covered by the ten passing JK/MotS 2.1 checks.
-- **Engine appearance:** normal correctness in an exported file does not certify a renderer's lighting behavior. Calibrate material/UV behavior and test the actual engine build and character actions before releasing models.
+- Blender scene import/export still covers geoset 0. Preserve other LODs through a format-aware writer or separately checked process.
+- Shared mesh datablocks can still become separate mesh records. Reuse requires accounting for object scale and properties; duplication alone does not make a model invalid.
+- Strict geometry import may still contain missing-material placeholders. Recovery can omit invalid faces or retain incomplete records. Keep diagnostics and original sources, and verify actual resource closure.
+- KEY targets complement the complete hierarchy/PUP allocation contract. Generic export, synthetic interpolation and one rendered pose do not prove game animation or blending.
+- 3DO 2.2 RGB serialization is repaired upstream, but JK/MotS retains its 2.1 resource lane. MAT encoding, texture dimensions, palette and renderer support remain explicit choices.
+- Test actual game rendering, collision, attachments and connected multiplayer for the intended release claims. This project does not certify sector-based level authoring.
 
 ## License and attribution
 
-Blender-Sith is Copyright (C) 2019–2026 Crt Vavros. Original and modified add-on code remains under [GPL-3.0-or-later](LICENSE). The new regression script carries the same license. No proprietary game data, generated character model, model weights, private transcripts, or third-party asset pack is included.
+Blender-Sith is Copyright (C) 2019–2026 Crt Vavros. Original and modified add-on code remains under [GPL-3.0-or-later](LICENSE). Coda's integration and automation do not transfer upstream authorship. No proprietary game data, generated character model, model weights, private transcript or third-party asset pack is included.
