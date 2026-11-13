@@ -44,6 +44,22 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
         header   = getExportFileHeader(f"3DO model '{os.path.basename(path)}'")
         model3doWriter.save3do(model3do, path, version, header)
 
+def _get_pivot_constraint(obj: bpy.types.Object):
+    for constraint in obj.constraints:
+        if type(constraint) == bpy.types.PivotConstraint:
+            return constraint
+    return None
+
+def _get_imported_pivot(obj: bpy.types.Object):
+    # An authored active constraint takes precedence over imported metadata.
+    # Keep this separate from objPivot(): KEY locations do not include the
+    # mesh-only translation baked by the 3DO importer.
+    constraint = _get_pivot_constraint(obj)
+    if constraint is not None and constraint.influence:
+        return None
+    pivot = obj.get(k3doImportedPivot)
+    return mathutils.Vector(pivot) if pivot is not None else None
+
 def _set_hnode_pose(node: Mesh3doNode, scale: mathutils.Vector):
     scaledLocation = vectorMultiply(node.obj.location, scale)
     node.position  = Vector3f(*scaledLocation)
@@ -51,19 +67,22 @@ def _set_hnode_pose(node: Mesh3doNode, scale: mathutils.Vector):
     node.pivot     = Vector3f(0.0, 0.0, 0.0)
 
     # pivot
-    pc = None
-    for c in node.obj.constraints:
-        if type(c) == bpy.types.PivotConstraint:
-            pc = c
-            break
+    pc = _get_pivot_constraint(node.obj)
 
     if not pc is None and pc.influence:
         pivot = -pc.offset
-        if c.target:
-            pivot += -c.target.location
+        if pc.target:
+            pivot += -pc.target.location
         pivot = vectorMultiply(pivot, scale)
         node.position = Vector3f(*(scaledLocation - pivot))
         node.pivot    = Vector3f(*pivot)
+    else:
+        pivot = _get_imported_pivot(node.obj)
+        if pivot is not None:
+            # Imported pivots were baked into this object's mesh, so use the
+            # same scale (including its own scale) as the exported vertices.
+            mesh_scale = vectorMultiply(scale, node.obj.scale)
+            node.pivot = Vector3f(*vectorMultiply(pivot, mesh_scale))
 
 def _get_mat_name_org(mat: bpy.types.Material) -> str:
     return mat.name.lower() if mat else ""
@@ -82,7 +101,7 @@ def _uv_add_image_size(uv: mathutils.Vector, mat) -> mathutils.Vector:
                 return vectorMultiply(uv, mathutils.Vector(node.image.size))
     return uv
 
-def _model3do_add_mesh(model: Model3do, mesh: bpy.types.Mesh, scale: mathutils.Vector, uvAbsolute: bool, exportVertexColors: bool) -> int:
+def _model3do_add_mesh(model: Model3do, mesh: bpy.types.Mesh, scale: mathutils.Vector, uvAbsolute: bool, exportVertexColors: bool, imported_pivot=None) -> int:
     if mesh is None:
         return -1
 
@@ -141,7 +160,10 @@ def _model3do_add_mesh(model: Model3do, mesh: bpy.types.Mesh, scale: mathutils.V
 
         # Set face vertex and texture index
         for loop, loop_idx in zip(face.loops, mesh.polygons[face.index].loop_indices):
-            vertx  = Vector3f(*vectorMultiply(loop.vert.co, scale))
+            # Undo only the imported mesh bake on the export copy. Restoring
+            # the native pivot preserves attachments without moving surfaces.
+            coordinate = loop.vert.co if imported_pivot is None else loop.vert.co - imported_pivot
+            vertx  = Vector3f(*vectorMultiply(coordinate, scale))
             vcolor = Vector4f(*loop[vcolor_layer]) if exportVertexColors else kDefaultVertexColor
             normal = Vector3f(*corner_normals[loop_idx].vector)
             vertex_key = (vertx, vcolor, normal)
@@ -187,8 +209,13 @@ def _set_mesh_properties(mesh: Mesh3do, obj: bpy.types.Object, scale: mathutils.
 
     radius_obj = getMeshRadiusObj(mesh)
     if radius_obj is None:
-        obj = getMeshObjectByName(mesh.name) # TODO: why is this needed? Isn't passed obj the owner of the mesh?
-        mesh.radius = objRadius(obj, scale)
+        if _get_imported_pivot(obj) is not None:
+            # The native mesh matrix includes its restored pivot. Bound the
+            # compensated local vertices, not the importer's baked scene mesh.
+            mesh.radius = max((mathutils.Vector(v).length for v in mesh.vertices), default=0.0)
+        else:
+            obj = getMeshObjectByName(mesh.name) # TODO: why is this needed? Isn't passed obj the owner of the mesh?
+            mesh.radius = objRadius(obj, scale)
     else:
         mesh.radius = radius_obj.dimensions[0] / 2
 
@@ -258,7 +285,7 @@ def _model3do_add_obj(model: Model3do, obj: bpy.types.Object, parent: bpy.types.
 
     # Add object's mesh
     objScale = vectorMultiply(scale, obj.scale)
-    mesh_idx = _model3do_add_mesh(model, obj.data, objScale, uvAbsolute, exportVertexColors)
+    mesh_idx = _model3do_add_mesh(model, obj.data, objScale, uvAbsolute, exportVertexColors, _get_imported_pivot(obj))
     if mesh_idx > -1:
         mesh = model.geosets[0].meshes[mesh_idx]
         _set_mesh_properties(mesh, obj, objScale)
@@ -271,40 +298,36 @@ def _model3do_add_obj(model: Model3do, obj: bpy.types.Object, parent: bpy.types.
     for child in obj.children:
         _model3do_add_obj(model, child, parent=obj, scale=objScale, uvAbsolute=uvAbsolute, exportVertexColors=exportVertexColors)
 
-def _get_model_radius(obj: bpy.types.Object, scale: mathutils.Vector = mathutils.Vector((1.0,)*3)):
-    min = mathutils.Vector((999999.0,)*3)
-    max = mathutils.Vector((-999999.0,)*3)
-    def do_bb(o: bpy.types.Object, s: mathutils.Vector):
-        if o.type != 'MESH': return
-        nonlocal min, max
-        for  v in o.data.vertices:
+def _get_model_radius(model: Model3do) -> float:
+    """Bound exported rest geometry about the native model origin.
 
-            v_world = vectorMultiply(o.matrix_local @ v.co, s)
-            if v_world.x < min.x:
-                min.x = v_world.x
-            if v_world.x > max.x:
-                max.x = v_world.x
+    Mesh vertices and node positions already contain exported scale. INSERT
+    OFFSET is placement metadata, not a translation of this bounding sphere.
+    A node pivot moves its mesh but does not move its children's joint frames.
+    """
+    transforms = {}
 
-            if v_world.y < min.y:
-                min.y = v_world.y
-            if v_world.y > max.y:
-                max.y = v_world.y
+    def joint_transform(index):
+        if index not in transforms:
+            node = model.meshHierarchy[index]
+            transform = makeRotationMatrix(*node.rotation).to_4x4()
+            transform.translation = mathutils.Vector(node.position)
+            if node.parentIdx >= 0:
+                transform = joint_transform(node.parentIdx) @ transform
+            transforms[index] = transform
+        return transforms[index]
 
-            if v_world.z < min.z:
-                min.z = v_world.z
-            if v_world.z > max.z:
-                max.z = v_world.z
-
-    def traverse_children(o: bpy.types.Object, s: mathutils.Vector):
-        for c in o.children:
-            s = vectorMultiply(s, c.scale)
-            do_bb(c, s)
-            traverse_children(c, s)
-
-    scale = vectorMultiply(scale, obj.scale)
-    do_bb(obj, scale)
-    traverse_children(obj, scale)
-    return ((max - min).length /2)
+    radius_squared = 0.0
+    for index, node in enumerate(model.meshHierarchy):
+        if node.meshIdx < 0:
+            continue
+        transform = joint_transform(index)
+        pivot = mathutils.Vector(node.pivot)
+        for geoset in model.geosets:
+            for vertex in geoset.meshes[node.meshIdx].vertices:
+                point = transform @ (mathutils.Vector(vertex) + pivot)
+                radius_squared = max(radius_squared, point.length_squared)
+    return radius_squared ** 0.5
 
 def _sync_model_meshes(model: Model3do):
     if not model.geosets:
@@ -349,9 +372,7 @@ def makeModel3doFromObj(name: str, obj: bpy.types.Object, uvAbsolute: bool = Fal
     model.geosets.append(Model3doGeoSet())
 
     radius_obj = getModelRadiusObj(obj)
-    if radius_obj is None:
-        model.radius = _get_model_radius(obj)
-    else:
+    if radius_obj is not None:
         model.radius = radius_obj.dimensions[0] / 2
 
     if obj.type == 'MESH' or len(obj.children) == 0:
@@ -364,4 +385,6 @@ def makeModel3doFromObj(name: str, obj: bpy.types.Object, uvAbsolute: bool = Fal
     model.reorderNodes()
     if sync_mesh_list:
         _sync_model_meshes(model)
+    if radius_obj is None:
+        model.radius = _get_model_radius(model)
     return model
