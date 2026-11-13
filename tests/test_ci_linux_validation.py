@@ -27,7 +27,8 @@ class LinuxValidationTests(unittest.TestCase):
                    'platform': {'system': 'Linux', 'machine': 'x86_64'},
                    'runtime': {'route': 'blender', 'blender': '5.1.2'},
                    'regression': {'passed': 29, 'failed': 0, 'addon_source_unchanged': True}}
-        report = {'passed': 29, 'failed': 0, 'addon_source_unchanged': True,
+        report = {'schema': 'blender-sith-agentic-regression-v2',
+                  'passed': 29, 'failed': 0, 'addon_source_unchanged': True,
                   'addon_sha256': hashes, 'tests': [{'passed': True} for _ in range(29)]}
         return receipt, report, hashes
 
@@ -62,13 +63,14 @@ class LinuxValidationTests(unittest.TestCase):
                 ci.validate_native_result(receipt, report, hashes)
 
     def test_incomplete_checks_or_wrong_package_cannot_pass(self):
-        for mutation in ('test_count', 'failed_test', 'source_after', 'report_hashes', 'source_changed'):
+        for mutation in ('test_count', 'failed_test', 'source_after', 'report_hashes', 'source_changed', 'old_schema'):
             receipt, report, hashes = copy.deepcopy(self.native_result())
             if mutation == 'test_count': report['tests'].pop()
             if mutation == 'failed_test': report['tests'][0]['passed'] = False
             if mutation == 'source_after': receipt['source_after_sha256'] = {}
             if mutation == 'report_hashes': report['addon_sha256'] = {}
             if mutation == 'source_changed': receipt['source_unchanged'] = False
+            if mutation == 'old_schema': report['schema'] = 'blender-sith-agentic-regression-v1'
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 ci.validate_native_result(receipt, report, hashes)
 

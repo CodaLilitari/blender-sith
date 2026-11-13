@@ -49,7 +49,7 @@ if mode=="no_report": sys.exit(0)
 if mode=="bad_json":
  (a.output/"regression.json").write_text("{")
  sys.exit(0)
-report={"schema":"blender-sith-agentic-regression-v1","blender":"5.1.2",
+report={"schema":"blender-sith-agentic-regression-v2","blender":"5.1.2",
         "harness_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "addon_sha256":hashes,"tests":[{"name":"fixture","passed":True}],
         "passed":1,"failed":0,"addon_source_unchanged":True}
@@ -59,6 +59,7 @@ if mode=="failed_report":
 if mode=="inconsistent_report": report["passed"]=99
 if mode=="empty_report": report.update(tests=[],passed=0,failed=0)
 if mode=="wrong_hash": report["harness_sha256"]="0"*64
+if mode=="old_schema": report["schema"]="blender-sith-agentic-regression-v1"
 if mode=="source_changed": (a.addon/"__init__.py").write_text("# changed\\n")
 (a.output/"regression.json").write_text(json.dumps(report))
 print("fixture stdout")
@@ -151,7 +152,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(self.receipt()["status"], "process_failed")
 
     def test_report_validation(self):
-        for mode in ("no_report", "bad_json", "failed_report", "inconsistent_report", "empty_report", "wrong_hash"):
+        for mode in ("no_report", "bad_json", "failed_report", "inconsistent_report", "empty_report", "wrong_hash", "old_schema"):
             with self.subTest(mode=mode):
                 self.output = self.root / mode
                 result = self.invoke(mode)

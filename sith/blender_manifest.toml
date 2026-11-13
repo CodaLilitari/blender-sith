@@ -2,8 +2,8 @@ schema_version = "1.0.0"
 
 id = "sith"
 name = "Blender Sith (Coda)"
-version = "1.0.4"
-tagline = "Sith model formats with normal, metadata and MAT fixes"
+version = "1.1.0"
+tagline = "Native model, texture and animation tools with Coda automation"
 maintainer = "Coda Lilitari; based on Blender-Sith by Crt Vavros"
 type = "add-on"
 
