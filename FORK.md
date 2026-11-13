@@ -2,13 +2,28 @@
 
 A focused community fork of [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith), based on upstream commit [`ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`](https://github.com/smlu/blender-sith/commit/ecc90131bcfdeabd400225e8a72ce94cbff1ec5c). The original Git history, copyright notices and GPL-3.0-or-later license are retained. Fork changes were developed by Coda in collaboration with Andrei for the JK/MotS Model Workshop.
 
-Current extension version: `1.0.3`, display name: **Blender Sith (Coda)**; distribution release: `v1.0.3-coda.2`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
+Current extension version: `1.0.4`, display name: **Blender Sith (Coda)**; distribution release candidate: `v1.0.4-coda.1`. Download the Windows x64, Linux x64, macOS arm64 or universal extension ZIP from the [GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1) or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1), then follow the [install route and package scope](docs/platform-builds.md#latest-install-route). Earlier releases, including `v1.0.1-coda.1` and `v1.0.3-coda.1`, are retained. The extension ID remains `sith`, so use one edition in a given Blender extension repository.
 
 Source distribution: [GitLab](https://gitlab.com/codalilitari/blender-sith) and [GitHub](https://github.com/CodaLilitari/blender-sith). This is a source fork with upstream Git history retained. Current GitHub metadata places the active repository in upstream's fork network; the pre-migration repository and original history are retained.
 
 This fork improves model export, scripted metadata assignment and MAT reading. It also supplies an optional [local MCP companion](docs/MCP.md) for structured 3DO inspection, geometry-only conversion, regression and packaging. The ordinary extension does not require it. The upstream UI and import/export entry points remain available. Synthetic regression checks cover 3DO 2.1, KEY and MAT behavior for JK/MotS workflows; they do not establish retail-game or multiplayer acceptance and do not cover level authoring.
 
 ## Changes
+
+### Native radius and pivot preservation (1.0.4)
+
+Automatic radius now follows the assembled exported native rest geometry,
+including accumulated hierarchy transforms and each node's own pivot. The
+radius override remains authoritative. New 3DO imports preserve native pivots
+as metadata; export reverses their temporary mesh bake and restores the pivots.
+Explicit PivotConstraint editing takes precedence. Visible geometry and weapon
+attachment matrices are checked separately. Older saved blends which already
+lost pivots require re-import from a source retaining them or verified rig repair.
+
+Red's radius workaround and archived attachment findings led to the reproductions.
+Coda implemented and independently checked the repairs; this credits the report
+without relabelling it as an authored add-on patch. See the
+[1.0.4 release record](docs/release-1.0.4-coda.1.md) for exact evidence and limits.
 
 ### Platform refresh and additional import/export fixes
 
@@ -91,7 +106,7 @@ The [original four-observation workflow probe](tests/evidence/remaining-limitati
 ## Known limitations and working alternatives
 
 - **Unapplied modifiers:** the exporter still reads the base mesh. Use a prepared export duplicate with the desired modifiers applied or an evaluated-mesh conversion before exporting. Keep the editable original. Weighted-normal modifiers must be applied if their result is to become source custom normals.
-- **Object transforms:** this patch does not change transform or radius code. Apply non-uniform or negative scale on an export duplicate, inspect its normals and winding, and recheck hierarchy offsets. The normal regression fixtures use unit scale.
+- **Object transforms:** automatic radius now follows the serialized hierarchy. General transform baking, reflected winding and animation edits still need inspection. Apply non-uniform or negative scale on an export duplicate when appropriate, inspect normals/winding, and recheck attachment matrices. The radius fix is not a general rig repair.
 - **Shared mesh datablocks:** two hierarchy objects can still export two mesh records. That is an optimization opportunity, not proof the model is invalid. Object scale and mesh properties must be considered before introducing reuse.
 - **Additional geosets/LODs:** the Blender scene importer remains limited to geoset 0. Preserve other geosets through a format-aware writer or a separately checked process.
 - **3DO 2.2:** an additional synthetic experiment found an existing writer/reader disagreement for RGB face extra light: the writer uses a parenthesized triple, while the loader expects three space-separated values. Upstream labels 2.2 as IJIM RGB. It is not fixed or covered by the ten passing JK/MotS 2.1 checks.

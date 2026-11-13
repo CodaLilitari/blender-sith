@@ -34,6 +34,7 @@ k3doFaceType       = "3do_face_type"
 k3doGeometryMode   = "3do_geometry_mode"
 k3doLightingMode   = "3do_lighting_mode"
 k3doTextureMode    = "3do_texture_mode"
+k3doImportedPivot  = "3do_imported_pivot"
 kDefaultFaceColor  = Vector4f(0.0, 0.0, 0.0, 1.0)  # Black color
 kGModel3do         = "Model3do"
 kImEulerOrder      = "YXZ"                         # Infernal machine euler orientation order Y - roll, X - pitch, Z - yaw

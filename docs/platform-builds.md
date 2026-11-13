@@ -1,33 +1,32 @@
 # Windows, Linux, macOS and universal packages
 
 Blender-Sith is a Python extension, not a custom Blender executable. Release
-`v1.0.3-coda.2` uses extension ID `sith`, extension version `1.0.3`, and display
+`v1.0.4-coda.1` uses extension ID `sith`, extension version `1.0.4`, and display
 name **Blender Sith (Coda)**. The release suffix identifies the distribution;
 it does not change the version in Blender's extension manifest. Install one
 edition in a given Blender extension repository.
 
 ## Latest install route
 
-For `v1.0.3-coda.2`, download the appropriate extension ZIP from the
-[GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.3-coda.2)
-or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.3-coda.2).
+For `v1.0.4-coda.1`, download the appropriate extension ZIP from the
+[GitHub release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.0.4-coda.1)
+or [GitLab release](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.0.4-coda.1).
 Choose a named extension asset, rather than the hosting service's source-code ZIP:
 
 | Platform | Extension ZIP | Manifest restriction |
 | --- | --- | --- |
-| Windows x64 | `sith-1.0.3-windows-x64.zip` | `windows-x64` |
-| Linux x64 | `sith-1.0.3-linux-x64.zip` | `linux-x64` |
-| macOS Apple Silicon | `sith-1.0.3-macos-arm64.zip` | `macos-arm64` |
-| Universal Python package | `sith-1.0.3-universal.zip` | No platform restriction |
+| Windows x64 | `sith-1.0.4-windows-x64.zip` | `windows-x64` |
+| Linux x64 | `sith-1.0.4-linux-x64.zip` | `linux-x64` |
+| macOS Apple Silicon | `sith-1.0.4-macos-arm64.zip` | `macos-arm64` |
+| Universal Python package | `sith-1.0.4-universal.zip` | No platform restriction |
 
 The four editions share the format implementation and tests. The universal ZIP
 contains the same Python extension without a platform restriction; it is not a
 compiled universal Blender binary or evidence of testing on every architecture.
 Use the release's package receipts and validation results to check the exact
-artifact and runtime tested. The exact Mac ZIP passed native Apple Silicon
-validation on macOS 15.8.2 with Blender 5.2.3 LTS: all 16 synthetic checks and
-all 52 unit tests passed. See the [release validation record](release-1.0.3-coda.2.md)
-and [successful native workflow](https://github.com/CodaLilitari/blender-sith/actions/runs/42592772833).
+artifact and runtime tested. The 1.0.4 candidate is being validated against its
+exact ZIPs; its [release record](release-1.0.4-coda.1.md) records current results.
+The earlier [1.0.3 validation](release-1.0.3-coda.2.md) remains historical.
 
 In Blender 5.0+, open Preferences > Add-ons > Install from Disk and select the
 extension ZIP. The extension ID is also used by upstream Blender-Sith, so replace
@@ -50,7 +49,7 @@ python C:\src\blender-sith\scripts\build_extension.py --output-dir C:\builds\sit
 ```
 
 The packager reads `sith/blender_manifest.toml` from the selected source tree.
-A source with no `platforms` entry builds `sith-1.0.3-universal.zip`; a source
+A source with no `platforms` entry builds `sith-1.0.4-universal.zip`; a source
 restricted to `linux-x64`, `windows-x64`, or `macos-arm64` builds the corresponding
 named ZIP in the table above. Use `--source-dir /path/to/source` to select another
 explicit source tree. A companion `.receipt.json` records the archive SHA-256
@@ -64,7 +63,7 @@ LF normalization, stable ordering, fixed timestamps and uncompressed ZIP
 members make bytes reproducible across operating systems. Existing packages
 and receipts are never overwritten.
 
-The current regression suite has 16 synthetic checks. Release validation must
+The current regression suite includes automatic-radius and native-pivot checks. Release validation must
 identify the exact runtime versions and package hashes exercised; older 10- or
 13-check reports remain historical evidence for their recorded source. Automated
 validation does not establish interactive installation or every Blender-version
@@ -118,8 +117,7 @@ separate, as described in [FORK.md](../FORK.md).
 The Mac ZIP contains the same Python add-on as the Linux and Windows editions,
 with Apple Silicon listed in its manifest. It does not contain
 a Blender executable or compiled universal binary. Packaging and source equivalence
-are separate from native execution. This release's native ARM64 macOS run passed
-official extension validation and all 16 synthetic checks using the exact ZIP.
+are separate from native execution. Consult the release record for native ARM64 macOS validation of the exact ZIP.
 Interactive installation, viewport use and game playback remain separate checks.
 Official Intel Mac builds end at Blender 4.5 LTS, below this add-on's Blender 5.0
 minimum. Supporting Intel would require a separately validated custom Blender 5+
