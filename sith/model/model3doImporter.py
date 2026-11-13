@@ -90,6 +90,9 @@ def _set_obj_rotation(obj, rotation):
 
 def _set_obj_pivot(obj, pivot):
     pvec = mathutils.Vector(pivot)
+    # Keep native attachment/joint data even though the scene mesh bakes in
+    # this translation. EMPTY hierarchy nodes can also carry a native pivot.
+    obj[k3doImportedPivot] = list(pivot)
     if  obj.type == 'MESH' and obj.data is not None and pvec.length > 0:
         obj.data.transform(mathutils.Matrix.Translation(pvec))
 

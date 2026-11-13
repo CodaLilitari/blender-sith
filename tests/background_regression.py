@@ -229,6 +229,262 @@ def main():
         assert tuple(nodes[0].position) == (1,2,3) and tuple(nodes[1].position) == (0,1,0)
         return {"nodes": 2, "meshes": 2, "offset_and_local_positions": "preserved"}
 
+    def radius_empty(label, parent=None, index=0):
+        obj = bpy.data.objects.new(label, None)
+        bpy.context.scene.collection.objects.link(obj)
+        obj.parent = parent
+        obj.sith_model3do_hnode_idx = index
+        return obj
+
+    def radius_triangle(label, parent=None, index=0):
+        obj = mesh_object(label, [(0,0,0), (1,0,0), (0,1,0)], [(0,1,2)])
+        obj.parent = parent
+        obj.sith_model3do_hnode_idx = index
+        return obj
+
+    def radius_result(obj, label, expected):
+        # Expectations below are hand-derived in exported model coordinates,
+        # independent of the radius implementation and Blender's world matrix.
+        before = {o.name: snapshot(o.data) for o in bpy.context.scene.objects if o.type == 'MESH'}
+        bpy.context.view_layer.update()
+        model = roundtrip(obj, label)
+        assert abs(model.radius - expected) < 2e-6, (model.radius, expected)
+        assert before == {o.name: snapshot(o.data) for o in bpy.context.scene.objects if o.type == 'MESH'}
+        return model, {"radius": model.radius, "expected": expected, "source_unchanged": True}
+
+    def model_radius_origin():
+        # An off-origin triangle needs radius 9, not half its bounding diagonal.
+        # The loose vertex is not exported and must not enlarge the model sphere.
+        obj = mesh_object('rad_origin', [(8,0,0),(9,0,0),(8,1,0),(100,0,0)], [(0,1,2)])
+        model, details = radius_result(obj, 'radius_origin', 9.0)
+        assert len(model.geosets[0].meshes[0].vertices) == 3
+        assert model.geosets[0].meshes[0].radius == 100.0, 'Mesh-radius semantics changed'
+        # Native models may have multiple LOD geosets. The helper must also
+        # cover a farther vertex in a later geoset, using the same hierarchy.
+        later_geoset = types.Model3doGeoSet()
+        later_mesh = types.Mesh3do(0, 'far_lod')
+        later_mesh.vertices = [utils.Vector3f(12,0,0)]
+        later_geoset.meshes.append(later_mesh)
+        model.geosets.append(later_geoset)
+        exporter = importlib.import_module(name + '.model.model3doExporter')
+        assert exporter._get_model_radius(model) == 12.0
+        details['later_geoset_radius'] = 12.0
+        return details
+
+    def model_radius_hierarchy():
+        root = radius_empty('rad_container')
+        root.location = (100,-200,300)
+        root.rotation_euler.z = 0.7  # Container rotation is not exported.
+        parent = radius_empty('rad_parent', root)
+        parent.location = (3,4,0)
+        parent.rotation_euler.z = 1.5707963267948966
+        child = radius_triangle('rad_child', parent, 1)
+        child.location = (2,0,0)
+        # Exported points: (3,6,0), (3,7,0), (2,6,0).
+        model, details = radius_result(root, 'radius_hierarchy', 58.0 ** 0.5)
+        assert tuple(model.insertOffset) == (100,-200,300), 'Insert-offset semantics changed'
+        assert tuple(model.meshHierarchy[0].position) == (3,4,0)
+        return details
+
+    def model_radius_nested_scale():
+        root = radius_empty('rad_scaled_root')
+        root.scale = (2,3,4)
+        parent = radius_empty('rad_scaled_parent', root)
+        parent.location = (1,0,0)
+        parent.scale = (-2,0.5,1)
+        parent.rotation_euler.z = 1.5707963267948966
+        child = mesh_object('rad_scaled_child', [(0,0,0),(1,0,0),(0,1,1)], [(0,1,2)])
+        child.parent = parent
+        child.location = (0,1,0)
+        child.scale = (1,2,0.5)
+        child.sith_model3do_hnode_idx = 1
+        # Already-scaled exported vertices produce (.5,0,0), (.5,-4,0), (-2.5,0,2).
+        model, details = radius_result(root, 'radius_nested_scale', 16.25 ** 0.5)
+        assert tuple(model.meshHierarchy[0].position) == (2,0,0)
+        assert tuple(model.meshHierarchy[1].position) == (0,1.5,0)
+        return details
+
+    def model_radius_scaled_siblings():
+        root = radius_empty('rad_siblings')
+        left = radius_triangle('rad_left', root)
+        left.scale = (2,1,1)
+        right = radius_triangle('rad_right', root, 1)
+        right.location = (10,0,0)
+        right.scale = (3,1,1)
+        # Separate root nodes: rightmost vertex is (13,0,0), regardless of left scale.
+        model, details = radius_result(root, 'radius_scaled_siblings', 13.0)
+        assert [n.parentIdx for n in model.meshHierarchy] == [-1,-1]
+        assert [m.radius for m in model.geosets[0].meshes] == [2.0,3.0]
+        return details
+
+    def model_radius_pivot():
+        root = radius_empty('rad_pivot_container')
+        parent = radius_triangle('rad_pivot_parent', root)
+        parent.location = (3,0,0)
+        parent.rotation_euler.z = 1.5707963267948966
+        pivot = parent.constraints.new('PIVOT')
+        pivot.offset = (-2,0,0)
+        child = radius_triangle('rad_pivot_child', parent, 1)
+        child.location = (4,0,0)
+        # Parent points (1,2), (1,3), (0,2); child points (1,4), (1,5), (0,4).
+        # A node pivot shifts its own mesh, not its descendants' joint frames.
+        model, details = radius_result(root, 'radius_pivot', 26.0 ** 0.5)
+        assert tuple(model.meshHierarchy[0].pivot) == (2,0,0)
+        assert tuple(model.meshHierarchy[0].position) == (1,0,0)
+        return details
+
+    def model_radius_empty_geometry():
+        root = radius_empty('rad_empty')
+        # The export omits helper geometry and unreferenced loose vertices.
+        loose = mesh_object('rad_loose', [(900,0,0)], [])
+        loose.parent = root
+        helper = radius_triangle('MESH_RADIUS_unused', root, 1)
+        helper.location = (999,999,999)
+        model, details = radius_result(root, 'radius_empty_geometry', 0.0)
+        assert len(model.meshHierarchy) == 1
+        assert not model.geosets[0].meshes[0].vertices
+        return details
+
+    def model_radius_override():
+        root = radius_empty('rad_manual')
+        radius_triangle('rad_manual_mesh', root)
+        helper = mesh_object('MODEL_RADIUS_rad_manual', [(-10,0,0),(10,0,0),(0,1,0)], [(0,1,2)])
+        helper.parent = root
+        model, details = radius_result(root, 'radius_override', 10.0)
+        assert len(model.meshHierarchy) == 1
+        assert model.geosets[0].meshes[0].radius == 1.0
+        return details
+
+    def pivot_fixture(label, empty_parent=False):
+        root = radius_empty(label + '_base')
+        root.location = (100,-200,300)
+        parent = (radius_empty if empty_parent else radius_triangle)(label + '_parent', root)
+        parent.location = (3,4,0)
+        parent.rotation_euler.z = 1.5707963267948966
+        child = radius_triangle(label + '_child', parent, 1)
+        child.location = (2,0,0)
+        source = roundtrip(root, label + '_base')
+        source.meshHierarchy[0].pivot = utils.Vector3f(2,0,0)
+        source.meshHierarchy[1].pivot = utils.Vector3f(0,3,0)
+        path = output / (label + '_input.3do')
+        writer = importlib.import_module(name + '.model.model3doWriter')
+        writer.save3do(source, str(path), loader.Model3doFileVersion.Version2_1, 'Synthetic native pivot fixture')
+        return source, path
+
+    def import_pivot_fixture(path):
+        return addon.import3do(str(path), mat_dirs=[], uvAbsolute_2_1=False,
+                               importVertexColors=False, importRadiusObj=False,
+                               preserveOrder=True, clearScene=True)
+
+    def pivot_import_roundtrip(empty_parent=False):
+        label = 'pivot_empty' if empty_parent else 'pivot_mesh'
+        source, path = pivot_fixture(label, empty_parent)
+        for cycle in range(2):
+            root = import_pivot_fixture(path)
+            bpy.context.view_layer.update()
+            actual = roundtrip(root, label + '_' + str(cycle))
+            nodes = actual.meshHierarchy
+            assert [tuple(n.pivot) for n in nodes] == [(2,0,0),(0,3,0)], 'Native attachment pivots were lost'
+            assert [tuple(n.position) for n in nodes] == [(3,4,0),(2,0,0)]
+            assert tuple(actual.insertOffset) == (100,-200,300)
+            for before, after in zip(source.geosets[0].meshes, actual.geosets[0].meshes):
+                assert len(before.vertices) == len(after.vertices)
+                assert max((Vector(a)-Vector(b)).length for a,b in zip(before.vertices,after.vertices)) < 2e-6
+            # Native right-angle fixture: attachment at parent T(3,4)*Rz(90)
+            # applied to child position(2,0) + pivot(0,3), independent of parent pivot.
+            p, c = nodes
+            attachment = (p.position[0] - c.position[1] - c.pivot[1],
+                          p.position[1] + c.position[0] + c.pivot[0], 0)
+            assert attachment == (0,6,0), attachment
+            path = output / (label + '_' + str(cycle) + '.3do')
+        return {'cycles': 2, 'empty_parent': empty_parent, 'pivots': [list(n.pivot) for n in nodes],
+                'attachment': list(attachment), 'native_vertices_unchanged': True}
+
+    def pivot_import_scaled():
+        source, path = pivot_fixture('pivot_scaled')
+        root = import_pivot_fixture(path)
+        parent = root.children[0]
+        child = parent.children[0]
+        parent.scale = (2,3,4)
+        child.scale = (-1,0.5,2)
+        bpy.context.view_layer.update()
+        actual = roundtrip(root, 'pivot_scaled_result')
+        nodes = actual.meshHierarchy
+        assert [tuple(n.pivot) for n in nodes] == [(4,0,0),(0,4.5,0)]
+        assert [tuple(n.position) for n in nodes] == [(3,4,0),(4,0,0)]
+        assert [tuple(v) for v in actual.geosets[0].meshes[0].vertices] == [(0,0,0),(2,0,0),(0,3,0)]
+        assert [tuple(v) for v in actual.geosets[0].meshes[1].vertices] == [(0,0,0),(-2,0,0),(0,1.5,0)]
+        return {'pivots': [list(n.pivot) for n in nodes], 'scaled_vertices': 'baked exactly once'}
+
+    def pivot_import_constraint_precedence():
+        source, path = pivot_fixture('pivot_explicit')
+        root = import_pivot_fixture(path)
+        parent = root.children[0]
+        constraint = parent.constraints.new('PIVOT')
+        constraint.offset = (-5,0,0)
+        bpy.context.view_layer.update()
+        actual = roundtrip(root, 'pivot_explicit_result')
+        assert tuple(actual.meshHierarchy[0].pivot) == (5,0,0)
+        assert tuple(actual.meshHierarchy[0].position) == (-2,4,0)
+        assert tuple(actual.geosets[0].meshes[0].vertices[0]) == (2,0,0), 'Explicit constraint must retain existing baked geometry'
+        constraint.influence = 0
+        bpy.context.view_layer.update()
+        restored = roundtrip(root, 'pivot_explicit_disabled')
+        assert tuple(restored.meshHierarchy[0].pivot) == (2,0,0)
+        assert tuple(restored.meshHierarchy[0].position) == (3,4,0)
+        assert tuple(restored.geosets[0].meshes[0].vertices[0]) == (0,0,0)
+        return {'active_constraint_precedence': True, 'disabled_constraint_preserves_import': True}
+
+    def pivot_import_mesh_radius():
+        source, path = pivot_fixture('pivot_bounds')
+        source.meshHierarchy[0].pivot = utils.Vector3f(-9,0,0)
+        source.geosets[0].meshes[0].vertices = [utils.Vector3f(10,0,0), utils.Vector3f(11,0,0), utils.Vector3f(10,1,0)]
+        writer = importlib.import_module(name + '.model.model3doWriter')
+        writer.save3do(source, str(path), loader.Model3doFileVersion.Version2_1, 'Pivot toward local origin')
+        root = import_pivot_fixture(path)
+        parent = root.children[0]
+        parent.scale = (2,3,4)
+        before = snapshot(parent.data)
+        bpy.context.view_layer.update()
+        actual = roundtrip(root, 'pivot_bounds_result')
+        mesh = actual.geosets[0].meshes[0]
+        assert mesh.radius == 22.0, (mesh.radius, 'Native mesh vertices reach 22 after pivot compensation')
+        assert tuple(actual.meshHierarchy[0].pivot) == (-18,0,0)
+        assert snapshot(parent.data) == before, 'Export must not change the imported mesh'
+        helper = mesh_object('MESH_RADIUS_' + utils.stripOrderPrefix(parent.name), [(-50,0,0),(50,0,0),(0,1,0)], [(0,1,2)])
+        helper.parent = root
+        bpy.context.view_layer.update()
+        manual = roundtrip(root, 'pivot_bounds_override')
+        assert manual.geosets[0].meshes[0].radius == 50.0
+        return {'automatic_native_mesh_radius': mesh.radius, 'manual_radius': 50.0, 'source_mesh_unchanged': True}
+
+    def pivot_import_saved_blend_key():
+        source, path = pivot_fixture('pivot_saved')
+        root = import_pivot_fixture(path)
+        root_name = root.name
+        blend_path = output / 'pivot_saved.blend'
+        bpy.ops.wm.save_as_mainfile(filepath=str(blend_path))
+        bpy.ops.wm.open_mainfile(filepath=str(blend_path), load_ui=False, use_scripts=False)
+        root = bpy.context.scene.objects[root_name]
+        actual = roundtrip(root, 'pivot_saved_result')
+        assert [tuple(n.pivot) for n in actual.meshHierarchy] == [(2,0,0),(0,3,0)]
+        scene = bpy.context.scene
+        scene.frame_start, scene.frame_end, scene.render.fps = 0, 10, 30
+        scene.sith_key_types = 'FFFF'
+        parent = root.children[0]
+        child = parent.children[0]
+        for obj, start in ((parent,(3,4,0)), (child,(2,0,0))):
+            for frame, delta in ((0,0), (10,1)):
+                obj.location = (start[0]+delta,start[1]+delta,start[2]+delta)
+                obj.keyframe_insert(data_path='location', frame=frame)
+        key_path = output / 'pivot_locations.key'
+        addon.exportKey(root, scene, str(key_path))
+        key = keyloader.loadKey(str(key_path))
+        assert len(key.nodes) == 2
+        positions = [[tuple(k.position) for k in n.keyframes] for n in key.nodes]
+        assert positions == [[(3,4,0),(4,5,1)],[(2,0,0),(3,1,1)]], positions
+        return {'saved_blend_pivots_preserved': True, 'key_locations': positions, 'pivot_not_subtracted_from_key': True}
+
     def metadata():
         scene = bpy.context.scene
         if "sith_key_types" in scene:
@@ -440,6 +696,19 @@ def main():
         check("mixed_ngon_disconnected_faces", mixed_polygons)
         check("uv_material_color_face_channels", data_channels)
         check("hierarchy_and_offset", hierarchy)
+        check("model_radius_origin", model_radius_origin)
+        check("model_radius_hierarchy", model_radius_hierarchy)
+        check("model_radius_nested_scale", model_radius_nested_scale)
+        check("model_radius_scaled_siblings", model_radius_scaled_siblings)
+        check("model_radius_pivot", model_radius_pivot)
+        check("model_radius_empty_geometry", model_radius_empty_geometry)
+        check("model_radius_override", model_radius_override)
+        check("pivot_import_mesh_roundtrip", pivot_import_roundtrip)
+        check("pivot_import_empty_roundtrip", lambda: pivot_import_roundtrip(True))
+        check("pivot_import_scaled", pivot_import_scaled)
+        check("pivot_import_constraint_precedence", pivot_import_constraint_precedence)
+        check("pivot_import_mesh_radius", pivot_import_mesh_radius)
+        check("pivot_import_saved_blend_key", pivot_import_saved_blend_key)
         check("hex_metadata", metadata)
         check("animated_key_roundtrip", key_roundtrip)
         check("key_zero_coordinates", key_zero_coordinates)
