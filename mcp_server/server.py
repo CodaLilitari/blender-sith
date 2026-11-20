@@ -161,16 +161,7 @@ class Service:
                            "No game-runtime compatibility claim"]}
 
     def environment(self, job):
-        env = os.environ.copy()
-        for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONOPTIMIZE"):
-            env.pop(name, None)
-        env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1", OMP_NUM_THREADS=str(self.threads),
-                   OPENBLAS_NUM_THREADS=str(self.threads), MKL_NUM_THREADS=str(self.threads))
-        for suffix in ("CONFIG", "SCRIPTS", "DATAFILES", "EXTENSIONS"):
-            path = job / ("prefs-" + suffix.lower())
-            path.mkdir()
-            env["BLENDER_USER_" + suffix] = str(path)
-        return env
+        return runner.isolated_environment(job, self.threads, prefix="prefs-")
 
     def execute(self, command, job, *, timeout=None):
         """Capture bounded logs; never forward Blender stdout to the MCP wire."""

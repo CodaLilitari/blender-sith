@@ -40,7 +40,7 @@ python tests/run.py --suite core
 python scripts/run_app_tests.py --blender /path/to/blender --timeout 600
 ```
 
-These are illustrative commands from the matching full-source root. Substitute the reviewed absolute interpreter/Blender path and supervise them with a deadline. Use Python 3.11+ and the dependencies declared in `tests/requirements.txt`; keep any environment outside the checkout. The installed add-on alone does not contain the development tests.
+Run these commands from the matching full-source checkout with Python 3.11+ and the dependencies in `tests/requirements.txt`. The app launcher starts background Blender with temporary preferences, offline mode, script auto-execution disabled and two threads. It relays the suite exit code and returns 124 on timeout, 130 on interruption and 127 when Blender cannot start. For the fork's source-hash and JSON receipts, use the bounded fork checks above. The installed extension contains the add-on code; the full checkout supplies the test suites.
 
 The `core` suite exercises real codecs without fake Blender modules. `app` and `all` require real background Blender 5.0+; `all` runs both suites. A standalone core pass does not test scene adapters, `exportMat` or rendering. [tests/README.md](../tests/README.md) gives current coverage and limitations. Record source identity, runtime, totals, failures and skips; completed release checks are recorded separately from unexecuted game acceptance.
 

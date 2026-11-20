@@ -87,6 +87,79 @@ def terminate_tree(process):
         return False
 
 
+def resolve_executable(executable):
+    """Resolve explicit paths and relative PATH entries against the caller's cwd."""
+    resolved = shutil.which(executable)
+    if resolved is not None:
+        return os.path.abspath(resolved)
+    return os.path.abspath(executable) if os.path.dirname(executable) else executable
+
+
+def isolated_environment(directory, threads=2, prefix=""):
+    """Keep host settings, but replace all Blender and Python injection paths."""
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("BLENDER_USER_")
+           and key not in ("PYTHONPATH", "PYTHONHOME", "PYTHONOPTIMIZE")}
+    for suffix in ("CONFIG", "SCRIPTS", "DATAFILES", "EXTENSIONS"):
+        path = directory / (prefix + suffix.lower())
+        path.mkdir()
+        env["BLENDER_USER_" + suffix] = str(path)
+    env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1",
+               OMP_NUM_THREADS=str(threads), OPENBLAS_NUM_THREADS=str(threads),
+               MKL_NUM_THREADS=str(threads))
+    return env
+
+
+def run_process(command, *, cwd, env, timeout, stdout=None, stderr=None):
+    """Run an owned subprocess with bounded lifetime and optional binary logs."""
+    result = {"status": "launch_failed", "exit_code": None}
+    process = None
+    try:
+        process = subprocess.Popen(command, cwd=cwd, env=env, stdout=stdout, stderr=stderr,
+                                   start_new_session=os.name != "nt")
+        result["exit_code"] = process.wait(timeout=timeout)
+        result["status"] = "completed" if process.returncode == 0 else "process_failed"
+    except subprocess.TimeoutExpired:
+        result["status"] = "timeout"
+        result["owned_tree_cleanup_succeeded"] = terminate_tree(process)
+        result["exit_code"] = process.returncode
+    except KeyboardInterrupt:
+        result["status"] = "interrupted"
+        if process is not None:
+            result["owned_tree_cleanup_succeeded"] = terminate_tree(process)
+            result["exit_code"] = process.returncode
+    except OSError as exc:
+        if process is not None:
+            result["status"] = "process_failed"
+            result["owned_tree_cleanup_succeeded"] = terminate_tree(process)
+            result["exit_code"] = process.returncode
+        message = type(exc).__name__ + ": " + str(exc)
+        if stderr is None:
+            print(message, file=sys.stderr)
+        else:
+            stderr.write((message + "\n").encode("utf-8"))
+        result["error_type"] = type(exc).__name__
+    except BaseException:
+        # Even an unexpected supervisor failure must not leave our child running.
+        if process is not None:
+            terminate_tree(process)
+        raise
+    return result
+
+
+def run_isolated(command, timeout):
+    """Relay an app-suite exit status from fresh temporary Blender preferences."""
+    command = [resolve_executable(command[0]), *command[1:]]
+    with tempfile.TemporaryDirectory(prefix="sith-app-tests-") as temp:
+        directory = Path(temp)
+        result = run_process(command, cwd=directory,
+                             env=isolated_environment(directory), timeout=timeout)
+    if result["status"] == "completed":
+        return 0
+    return {"timeout": 124, "interrupted": 130, "launch_failed": 127}.get(
+        result["status"], result["exit_code"] or 1)
+
+
 def safe_version(value):
     # Receipts are portable: no executable, user, machine, or checkout paths.
     return value if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9 ._()+-]{1,128}", value) else "unknown"
@@ -173,46 +246,19 @@ def main(argv=None):
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix=".runtime-", dir=output) as temp:
         isolated = Path(temp)
-        env = os.environ.copy()
-        for suffix in ("CONFIG", "SCRIPTS", "DATAFILES", "EXTENSIONS"):
-            directory = isolated / suffix.lower()
-            directory.mkdir()
-            env["BLENDER_USER_" + suffix] = str(directory)
-        env.update(PYTHONDONTWRITEBYTECODE="1", PYTHONNOUSERSITE="1",
-                   OMP_NUM_THREADS=str(args.threads), OPENBLAS_NUM_THREADS=str(args.threads),
-                   MKL_NUM_THREADS=str(args.threads))
-        # Explicit --bpy-site is the dependency route, not ambient Python injection.
-        env.pop("PYTHONPATH", None)
-        env.pop("PYTHONHOME", None)
-        env.pop("PYTHONOPTIMIZE", None)
+        env = isolated_environment(isolated, args.threads)
         runtime_path = isolated / "runtime.json"
         wrapper = isolated / "bootstrap.py"
         wrapper.write_text(bootstrap(harness, addon, output / "results", runtime_path, args.threads,
                                     args.bpy_site.resolve() if args.bpy_site else None), encoding="utf-8")
         executable = args.blender or args.python
-        resolved = shutil.which(executable) or executable
+        resolved = resolve_executable(executable)
         command = ([resolved, "--background", "--factory-startup", "--offline-mode", "--disable-autoexec", "--threads", str(args.threads),
                     "--python-exit-code", "1", "--python", str(wrapper)] if args.blender
                    else [resolved, "-B", str(wrapper)])
-        process = None
         with (output / "stdout.log").open("wb") as stdout, (output / "stderr.log").open("wb") as stderr:
-            try:
-                process = subprocess.Popen(command, cwd=isolated, env=env, stdout=stdout, stderr=stderr,
-                                           start_new_session=os.name != "nt")
-                receipt["exit_code"] = process.wait(timeout=args.timeout)
-                receipt["status"] = "completed" if process.returncode == 0 else "process_failed"
-            except subprocess.TimeoutExpired:
-                receipt["status"] = "timeout"
-                receipt["owned_tree_cleanup_succeeded"] = terminate_tree(process)
-                receipt["exit_code"] = process.returncode
-            except KeyboardInterrupt:
-                receipt["status"] = "interrupted"
-                if process is not None:
-                    receipt["owned_tree_cleanup_succeeded"] = terminate_tree(process)
-                    receipt["exit_code"] = process.returncode
-            except OSError as exc:
-                stderr.write((type(exc).__name__ + ": " + str(exc) + "\n").encode("utf-8"))
-                receipt["error_type"] = type(exc).__name__
+            receipt.update(run_process(command, cwd=isolated, env=env, timeout=args.timeout,
+                                       stdout=stdout, stderr=stderr))
         if runtime_path.is_file():
             try:
                 runtime = json.loads(runtime_path.read_text(encoding="utf-8"))

@@ -142,11 +142,12 @@ class ServiceTests(unittest.TestCase):
 
     def test_environment_isolates_and_clears_python_injection(self):
         from unittest.mock import patch
-        with self.service.job("test") as job, patch.dict(os.environ, {"PYTHONPATH": "bad", "PYTHONHOME": "bad", "PYTHONOPTIMIZE": "2"}):
+        with self.service.job("test") as job, patch.dict(os.environ, {"PYTHONPATH": "bad", "PYTHONHOME": "bad", "PYTHONOPTIMIZE": "2", "BLENDER_USER_RESOURCES": "ambient resources"}):
             env = self.service.environment(job)
         self.assertNotIn("PYTHONPATH", env)
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONOPTIMIZE", env)
+        self.assertFalse("BLENDER_USER_RESOURCES" in env, "Ambient Blender resource override survived")
         self.assertEqual(env["PYTHONNOUSERSITE"], "1")
         self.assertTrue(Path(env["BLENDER_USER_CONFIG"]).is_relative_to(job))
 
