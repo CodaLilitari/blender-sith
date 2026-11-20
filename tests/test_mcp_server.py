@@ -23,8 +23,10 @@ class ServiceTests(unittest.TestCase):
         self.read.mkdir()
         self.input = self.read / "sample.3do"
         self.input.write_text("not a model", encoding="utf-8")
-        addon = self.root / "addon"
-        addon.mkdir()
+        addon = self.root / "checkout-source" / "sith"
+        addon.mkdir(parents=True)
+        (addon.parent / "LICENSE").write_text("fixture")
+        (addon / "blender_manifest.toml").write_text('id = "sith"\nversion = "0.0.7"\n')
         (addon / "__init__.py").write_text("# minimal trusted unit-test addon\n", encoding="utf-8")
         self.config = {"python": str(Path(sys.executable).resolve()), "read_roots": [str(self.read)],
                        "addon": str(addon), "job_root": str(self.root / "jobs"), "timeout": 30}
@@ -33,9 +35,17 @@ class ServiceTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
+    def test_native_surface_budget_counts_polygons_before_conversion(self):
+        from types import SimpleNamespace
+        worker = server.load_helper("sith_worker", ROOT / "mcp_server" / "worker.py")
+        geo = SimpleNamespace(meshes=[SimpleNamespace(faces=[
+            SimpleNamespace(vertexIdxs=range(n)) for n in (2, 3, 4, 5)])])
+        self.assertEqual(worker.geoset_topology(1, geo), {"index": 1, "meshes": 1, "triangles": 1, "quads": 1,
+                         "ngons": 1, "fewer_than_three_corners": 1, "triangle_equivalents": 6})
+
     def test_info_does_not_launch_runtime(self):
         self.assertEqual(self.service.info()["transport"], "stdio")
-        self.assertEqual(len(self.service.info()["tools"]), 5)
+        self.assertEqual(len(self.service.info()["tools"]), 6)
         self.assertFalse(list((self.root / "jobs").iterdir()))
 
     def test_allowlist_accepts_exact_input(self):
@@ -66,6 +76,38 @@ class ServiceTests(unittest.TestCase):
             self.skipTest("Host cannot create symlinks: " + str(exc))
         with self.assertRaisesRegex(ValueError, "Symlink"):
             self.service.source(str(link))
+
+    def test_key_is_checked_before_job_creation(self):
+        outside = self.root / "outside.key"
+        outside.write_text("fixture")
+        for key_path, target in ((str(outside), "JKDF2"), (str(self.input), "MOTS"), (str(self.input), "OTHER")):
+            with self.subTest(key_path=key_path, target=target), self.assertRaises(ValueError):
+                self.service.model_job(str(self.input), False, key_path, target)
+        self.assertFalse(list(self.service.job_root.iterdir()))
+
+    @unittest.skipUnless(os.name == "nt", "Windows App Execution Aliases")
+    def test_store_exception_only_for_configured_blender_alias(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        folder = self.root / "Microsoft" / "WindowsApps"
+        folder.mkdir(parents=True)
+        alias = folder / "blender-launcher.exe"
+        alias.touch()
+        original = Path.lstat
+        tag = SimpleNamespace(st_mode=0, st_file_attributes=0x400, st_reparse_tag=0x8000001B)
+        with patch.dict(os.environ, {"LOCALAPPDATA": str(self.root)}):
+            with patch.object(Path, "lstat", lambda p: tag if p == alias else original(p)):
+                self.assertEqual(server.checked_path(str(alias), blender_alias=True), alias)
+                with self.assertRaisesRegex(ValueError, "Symlink"):
+                    server.checked_path(str(alias))
+                tag.st_reparse_tag = 0xA000000C  # conventional symlink
+                with self.assertRaisesRegex(ValueError, "Symlink"):
+                    server.checked_path(str(alias), blender_alias=True)
+
+    def test_installed_layout_cannot_silently_package_server_checkout(self):
+        (self.service.addon.parent / "LICENSE").unlink()
+        with self.assertRaisesRegex(ValueError, "configured source"):
+            self.service.package()
 
     def test_size_limit(self):
         from unittest.mock import patch
@@ -100,11 +142,12 @@ class ServiceTests(unittest.TestCase):
 
     def test_environment_isolates_and_clears_python_injection(self):
         from unittest.mock import patch
-        with self.service.job("test") as job, patch.dict(os.environ, {"PYTHONPATH": "bad", "PYTHONHOME": "bad", "PYTHONOPTIMIZE": "2"}):
+        with self.service.job("test") as job, patch.dict(os.environ, {"PYTHONPATH": "bad", "PYTHONHOME": "bad", "PYTHONOPTIMIZE": "2", "BLENDER_USER_RESOURCES": "ambient resources"}):
             env = self.service.environment(job)
         self.assertNotIn("PYTHONPATH", env)
         self.assertNotIn("PYTHONHOME", env)
         self.assertNotIn("PYTHONOPTIMIZE", env)
+        self.assertFalse("BLENDER_USER_RESOURCES" in env, "Ambient Blender resource override survived")
         self.assertEqual(env["PYTHONNOUSERSITE"], "1")
         self.assertTrue(Path(env["BLENDER_USER_CONFIG"]).is_relative_to(job))
 
@@ -151,12 +194,14 @@ class ServiceTests(unittest.TestCase):
         from unittest.mock import Mock, patch
         process = Mock(returncode=0)
         process.wait.return_value = 0
-        with patch.object(server.runner.subprocess, "Popen", return_value=process) as launch, redirect_stdout(io.StringIO()):
+        runner_processes = Mock(wraps=subprocess)
+        runner_processes.Popen.return_value = process
+        with patch.object(server.runner, "subprocess", runner_processes), redirect_stdout(io.StringIO()):
             code = server.runner.main(["--blender", str(Path(sys.executable).resolve()), "--addon", str(self.service.addon),
                                        "--output", str(self.root / "regression-output")])
         # Deliberately no child report: an otherwise successful exit still fails.
         self.assertEqual(code, 1)
-        self.assertIn("--offline-mode", launch.call_args.args[0])
+        self.assertIn("--offline-mode", runner_processes.Popen.call_args.args[0])
 
     def package_with_fake_validator(self, validation_status="completed"):
         from unittest.mock import patch
@@ -177,12 +222,24 @@ class ServiceTests(unittest.TestCase):
         with patch.object(self.service, "execute", side_effect=execute):
             return self.service.package(), calls
 
+    def test_build_reads_the_configured_checkout_bytes(self):
+        import zipfile
+        result = self.service.package()
+        self.assertEqual(result["status"], "passed", result)
+        with zipfile.ZipFile(result["archive"]["path"]) as archive:
+            self.assertEqual(archive.read("__init__.py"), b"# minimal trusted unit-test addon\n")
+            self.assertEqual(archive.read("LICENSE"), b"fixture")
+            self.assertIn(b'0.0.7', archive.read("blender_manifest.toml"))
+
     def test_package_python_route_explicitly_skips_official_validator(self):
         result, calls = self.package_with_fake_validator()
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["validator"]["status"], "not_run")
         self.assertIn("no configured Blender CLI", result["validator"]["reason"])
         self.assertEqual(len(calls), 1)
+        command, _ = calls[0]
+        self.assertEqual(command[command.index("--source-dir") + 1], str(self.service.addon.parent))
+        self.assertEqual(result["source"], str(self.service.addon))
 
     def test_package_blender_route_validates_exact_archive_in_isolated_job(self):
         self.service.route = "blender"

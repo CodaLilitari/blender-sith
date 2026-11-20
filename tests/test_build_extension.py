@@ -36,7 +36,10 @@ class BuildExtensionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="sith package tests ")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # Ordinary fixture storage is physical; deliberate link/alias inputs
+        # are created explicitly below. This also aligns injected scan errors
+        # with the builder's canonical source on Windows short TEMP and /var.
+        self.root = Path(self.temp.name).resolve()
         self.source = self.root / "source with spaces"
         self.addon = self.source / "sith"
         self.addon.mkdir(parents=True)
@@ -312,6 +315,35 @@ class BuildExtensionTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertTrue("source" in result.stderr.lower() or "git" in result.stderr.lower())
                 self.assertFalse((external / "generated").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Windows short names and directory junctions")
+    def test_short_source_alias_through_output_junction_is_rejected(self):
+        import ctypes
+        short_name = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        short_name.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint32)
+        short_name.restype = ctypes.c_uint32
+        buffer = ctypes.create_unicode_buffer(32768)
+        if not short_name(str(self.source), buffer, len(buffer)):
+            self.skipTest("Host does not expose a short source pathname")
+        alias = Path(buffer.value)
+        if alias == self.source:
+            self.skipTest("Host has no distinct 8.3 alias for the source")
+        self.assertTrue(alias.samefile(self.source))
+        external = self.root / "external short-name output"
+        external.mkdir()
+        link = self.source / "external output junction"
+        created = subprocess.run(
+            ["cmd.exe", "/c", "mklink", "/J", str(link), str(external)],
+            capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        if created.returncode:
+            self.skipTest("Host cannot create the external fixture junction")
+        self.assertEqual(link.resolve(), external.resolve())
+        # The endpoint is external, but the supplied route physically passes
+        # through source under a different spelling before following the link.
+        result = self.run_builder(alias / link.name / "generated")
+        self.assertNotEqual(result.returncode, 0, result.stdout)
+        self.assertIn("source", result.stderr.lower())
+        self.assertFalse((external / "generated").exists())
 
 
 if __name__ == "__main__":

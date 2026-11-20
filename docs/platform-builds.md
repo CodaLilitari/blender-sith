@@ -1,17 +1,17 @@
 # Windows, Linux, macOS and universal packages
 
-Blender-Sith is a Python extension, not a custom Blender executable. This source is the **1.1.0 release**, distribution `v1.1.0-coda.1`, extension ID `sith`, display name **Blender Sith (Coda)**. Exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS. A release suffix identifies the distribution, not a different extension version.
+The latest packaged Blender-Sith extension is **1.2.0**, distribution `v1.2.0-coda.1`, extension ID `sith`, display name **Blender Sith (Coda)**. Use the named ZIP that matches your Blender platform. The release includes separate receipts for Windows, Linux and Apple Silicon macOS.
 
 ## Latest install route
 
-Download [GitHub v1.1.0-coda.1](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1) or [GitLab v1.1.0-coda.1](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.1.0-coda.1). Check `SHA256SUMS.txt` and the [release record](release-1.1.0-coda.1.md).
+Download [GitHub v1.2.0-coda.1](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1) or [GitLab v1.2.0-coda.1](https://gitlab.com/codalilitari/blender-sith/-/releases/v1.2.0-coda.1). Check `SHA256SUMS.txt` and the [release record](release-1.2.0-coda.1.md).
 
 | Platform | Extension ZIP | Measured execution |
 | --- | --- | --- |
-| Windows x64 | `sith-1.1.0-windows-x64.zip` | Python 3.13 / bpy 5.1.2 |
-| Linux x64 | `sith-1.1.0-linux-x64.zip` | Native Blender 5.1.2 |
-| macOS Apple Silicon | `sith-1.1.0-macos-arm64.zip` | Native Blender 5.2.3 LTS |
-| Universal | `sith-1.1.0-universal.zip` | Windows Python/bpy regression |
+| Windows x64 | `sith-1.2.0-windows-x64.zip` | Python 3.13 / bpy 5.1.2 |
+| Linux x64 | `sith-1.2.0-linux-x64.zip` | Native Blender 5.1.2 |
+| macOS Apple Silicon | `sith-1.2.0-macos-arm64.zip` | Native Blender 5.2.3 LTS |
+| Universal | `sith-1.2.0-universal.zip` | Windows Python/bpy regression |
 
 All editions share the format implementation; their manifests select platforms. The universal ZIP is neither a universal Blender executable nor proof of every architecture. Choose a named extension ZIP, not the hosting service's source archive, and compare its hash with the exact release receipts.
 
@@ -19,7 +19,7 @@ In Blender 5.0+, open Preferences > Add-ons > Install from Disk, select the ZIP 
 
 ## Build an installable ZIP
 
-The fork's deterministic builder needs Python 3.11+ and the standard library. It does not run Git or install dependencies:
+The fork's deterministic builder uses Python 3.11+ and the standard library. In a Git checkout it uses the index to select source files. In an extracted source archive it builds from the available files. See [package membership and build commands](building.md).
 
 ```sh
 python /path/to/source/scripts/build_extension.py \

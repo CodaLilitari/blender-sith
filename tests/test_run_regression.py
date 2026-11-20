@@ -35,7 +35,7 @@ a=p.parse_args()
 a.output.mkdir()
 hashes={str(f.relative_to(a.addon)).replace(chr(92),"/"):hashlib.sha256(f.read_bytes()).hexdigest()
         for f in sorted(a.addon.rglob("*")) if f.suffix in (".py", ".toml")}
-observed={"threads":bpy.context.scene.render.threads,"addon":str(a.addon),"optimize":sys.flags.optimize,
+observed={"threads":bpy.context.scene.render.threads,"addon":str(a.addon),"optimize":sys.flags.optimize,"resources":os.environ.get("BLENDER_USER_RESOURCES"),
           "env":{k:os.environ[k] for k in ("BLENDER_USER_CONFIG","BLENDER_USER_SCRIPTS",
                                          "BLENDER_USER_DATAFILES","BLENDER_USER_EXTENSIONS")}}
 assert all(Path(v).is_dir() for v in observed["env"].values())
@@ -95,7 +95,8 @@ class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="blender launcher test ")
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Hosted Windows may use an 8.3 temp name; macOS may use /var -> /private/var.
+        self.root = Path(self.tmp.name).resolve()
         self.checkout = self.root / "source with spaces"
         (self.checkout / "scripts").mkdir(parents=True)
         (self.checkout / "tests").mkdir()
@@ -144,6 +145,16 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(all(not Path(p).exists() for p in observed["env"].values()))
         self.assertIn("fixture stdout", (self.output / "stdout.log").read_text())
         self.assertIn("fixture stderr", (self.output / "stderr.log").read_text())
+
+    def test_caller_relative_python_and_ambient_blender_resources(self):
+        import contextlib
+        with contextlib.chdir(self.root):
+            result = self.invoke(executable=os.path.relpath(sys.executable, self.root),
+                                 env_update={"BLENDER_USER_RESOURCES": "ambient resources"})
+        self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+        observed = json.loads((self.output / "results" / "observed.json").read_text())
+        self.assertIsNone(observed["resources"])
+        self.assertEqual(self.receipt()["status"], "passed")
 
     def test_process_failure_cannot_pass(self):
         result = self.invoke("exit_failure")
@@ -236,7 +247,7 @@ class LauncherTests(unittest.TestCase):
         result = self.invoke(extra=("--addon", str(addon)))
         self.assertEqual(result.returncode, 0, result.stderr)
         observed = json.loads((self.output / "results" / "observed.json").read_text())
-        self.assertEqual(Path(observed["addon"]), addon)
+        self.assertTrue(Path(observed["addon"]).samefile(addon))
 
     @unittest.skipUnless(shutil.which("pwsh") or shutil.which("powershell"), "PowerShell unavailable")
     def test_powershell_entrypoint_preserves_spaces(self):

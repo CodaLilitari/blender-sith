@@ -1,11 +1,13 @@
-> **Community fork: Blender-Sith Agentic — 1.1.0 release.** This source integrates upstream **01ff4bd** with Coda's reviewed hexadecimal-property and native-pivot changes (PR16/PR23) and retained automation. The release is **v1.1.0-coda.1**; exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS; see [release evidence](docs/release-1.1.0-coda.1.md). The [published 1.0.4 record](docs/release-1.0.4-coda.1.md) remains historical evidence for its own bytes. See [provenance and migration](FORK.md), [package status](docs/platform-builds.md#latest-install-route) and [explicit API/target usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained. The optional [MCP companion](docs/MCP.md) is separate.
+> **Blender-Sith Agentic** is a community fork of [Blender-Sith by smlu](https://github.com/smlu/blender-sith). The default branch includes upstream `168dadc`, editable native pivots, optional pivot baking, and a [3DO/KEY binding audit](docs/MCP.md#will-this-key-animate-the-intended-joint). See [development changes and migration](FORK.md).
+>
+> For an installable build, use [v1.2.0-coda.1](docs/platform-builds.md#latest-install-route). Its [release record](docs/release-1.2.0-coda.1.md) identifies the packages tested on Windows, Linux and Apple Silicon macOS.
 
 <div align="center">
 
 # 🎮 Sith Engine Toolkit for Blender
 
 [![Blender](https://img.shields.io/badge/Blender-5.0+-orange.svg?style=flat&logo=blender)](https://www.blender.org/)
-[![Tests](https://github.com/smlu/blender-sith/actions/workflows/tests.yml/badge.svg)](https://github.com/smlu/blender-sith/actions/workflows/tests.yml)
+[![Fork tests](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml?query=branch%3Amaster)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-purple.svg?style=flat)
 
@@ -46,9 +48,7 @@
 
 ## ✨ Features
 
-These features describe the integrated 1.1.0 source. Published 1.0.4
-packages do not acquire them from this README; choose the exact version and
-validation record deliberately.
+These features describe Blender Sith (Coda) 1.2.0. Use the named extension ZIP for your platform.
 <div align="center">
 <img src="demo/gif/in_hat2.gif" width="48%"/>
 </div>
@@ -102,7 +102,7 @@ validation record deliberately.
 
 ## ⚡ Quick Start
 
-1. **Select version**: Follow [platform builds](docs/platform-builds.md#latest-install-route) for the 1.1.0 release and its exact validation scope. Use Blender 5.0+ Preferences > Add-ons > Install from Disk for an extension ZIP; source loading is a separate route.
+1. **Select version**: Follow [platform builds](docs/platform-builds.md#latest-install-route) for the 1.2.0 release and its exact validation scope. Use Blender 5.0+ Preferences > Add-ons > Install from Disk for an extension ZIP; source loading is a separate route.
 2. **Import Model**: `File > Import > Sith Game Engine 3D Model (.3do)`
 3. **Import Textures**: Use MAT Directory option or let auto-search find them
 4. **Import Animation**: `File > Import > Sith Game Engine Animation (.key)`
@@ -125,7 +125,7 @@ validation record deliberately.
 
 ### Method 1: From Release (Recommended)
 
-1. 📥 **Download** the chosen named extension ZIP from the [1.1.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.1.0-coda.1.md) and [package status](docs/platform-builds.md).
+1. 📥 **Download** the chosen named extension ZIP from the [1.2.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.2.0-coda.1.md) and [package status](docs/platform-builds.md).
 2. 🔧 **Open Blender** and go to `Edit > Preferences > Add-ons`
 3. 📂 **Install**: Click the dropdown menu (▼) at the top-right and select `Install from Disk...`
 4. 📁 **Select** the downloaded ZIP file
@@ -205,14 +205,14 @@ blender --background --factory-startup --python-exit-code 1 --python tests/run.p
 
 Both suites use standard-library `unittest` and synthetic fixtures. GitHub Actions
 configuration includes core jobs on Windows, macOS and Linux, and application
-tests in headless Blender on Linux. Completed runs are linked from the [release record](docs/release-1.1.0-coda.1.md). Also run the retained [bounded fork/package checks](docs/agent-use.md),
+tests in headless Blender on Linux. Completed runs are linked from the [release record](docs/release-1.2.0-coda.1.md). Also run the retained [bounded fork/package checks](docs/agent-use.md),
 binding exact source/ZIP hashes and measured runtimes. Use explicit runtime paths,
 isolated preferences and deadlines; keep environments/results outside Git trees.
 See [tests/README.md](tests/README.md) for coverage, commands and interpolation limits.
 
 ## Links
 
-- 📦 [1.1.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.1.0-coda.1) - Validation scope is recorded in the platform guide
+- 📦 [1.2.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1) - Validation scope is recorded in the platform guide
 - 🐛 [Issue Tracker](https://github.com/smlu/blender-sith/issues) - Report bugs or request features
 - 🌐 [Blender.org](https://www.blender.org/) - Get Blender
 

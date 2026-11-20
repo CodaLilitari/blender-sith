@@ -1,6 +1,6 @@
 # Proposed upstream Blender-Sith PR series
 
-These are seven proposed titles and bodies for upstream review. No PR has been submitted, and this document does not establish isolated submission branches. Implementation descriptions were checked against the combined working source; each extracted change still needs its own review and test run.
+This document preserves the original proposal drafts and their validation notes. The submitted runner, packaging, MCP and pivot revisions evolved during review. Consult the current [runner PR](https://github.com/smlu/blender-sith/pull/19), [packaging PR](https://github.com/smlu/blender-sith/pull/20), [MCP PR](https://github.com/smlu/blender-sith/pull/21) and [pivot PR](https://github.com/smlu/blender-sith/pull/23) for their submitted scope. The [fork guide](../FORK.md) and [MCP tool reference](MCP.md) describe the default branch.
 
 **PR structure and public-source review: Lilitari; implementation and execution: Coda with Andrei.** Lilitari reviewed the public source snapshots, not the subsequently developed local macOS/MCP implementation or local test execution. Original Blender-Sith authorship and GPL-3.0-or-later licensing remain with Crt Vavros / smlu and the respective contributors.
 
