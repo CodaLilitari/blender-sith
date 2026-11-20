@@ -6,6 +6,10 @@ Choose one exact add-on and runtime before starting. Record their versions, path
 
 Use a disposable background process, isolated Blender preferences, two threads by default and an actual subprocess deadline. Keep runtimes, dependencies, copied source, caches and outputs physically outside Git checkouts without junctions or links back into them. `-B` prevents Python cache writes, not cache reads; clean or isolate caches when source identity matters.
 
+## Check a replacement model against an animation
+
+With matching development source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
+
 ## Run the bounded fork checks
 
 Prefer the launcher, with an explicit absolute runtime, add-on and new external output:

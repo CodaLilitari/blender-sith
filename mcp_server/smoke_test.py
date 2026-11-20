@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Exercise all five tools through the official MCP client's real stdio transport."""
+"""Exercise the general companion tools through the official MCP client's real stdio transport."""
 import argparse
 import asyncio
 import hashlib
@@ -21,7 +21,7 @@ async def check(config, source, evidence_file):
     async with Client(server) as client:
         response = await client.list_tools()
         evidence["tools"] = [tool.name for tool in response.tools]
-        expected = {"server_info", "inspect_3do", "convert_3do_to_blend", "run_regression", "build_extension"}
+        expected = {"server_info", "inspect_3do", "audit_model_key", "convert_3do_to_blend", "run_regression", "build_extension"}
         if set(evidence["tools"]) != expected:
             raise RuntimeError("Unexpected tool catalog")
         for name, arguments in (("server_info", {}), ("inspect_3do", {"path": str(source)}),
