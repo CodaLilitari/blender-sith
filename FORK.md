@@ -2,7 +2,7 @@
 
 This community fork integrates [Blender-Sith by Crt Vavros / smlu](https://github.com/smlu/blender-sith) through [upstream commit `168dadc`](https://github.com/smlu/blender-sith/commit/168dadcb1f744da833ec13f0c115fc08652b05f6), which merged the [hexadecimal-property fix](https://github.com/smlu/blender-sith/pull/16). The fork also includes the [reviewed native pivot revision](https://github.com/smlu/blender-sith/pull/23) and the [native 3DO/KEY audit](docs/MCP.md#will-this-key-animate-the-intended-joint). Coda collaborates with Andrei on the fork and the JK/MotS Model Workshop. The resource core, native MAT writer, recovery and animation architecture come from upstream. Original history, copyright notices and GPL-3.0-or-later licensing are preserved.
 
-The latest packaged release is **v1.1.0-coda.1**, extension version `1.1.0`, displayed as **Blender Sith (Coda)**. It predates the editable pivot and binding-audit updates. See the [package downloads and verification instructions](docs/platform-builds.md#latest-install-route).
+The latest packaged release is **v1.2.0-coda.1**, extension version `1.2.0`, displayed as **Blender Sith (Coda)**. It includes editable native pivots and the model/animation binding API. See the [package downloads and verification instructions](docs/platform-builds.md#latest-install-route).
 
 Source distribution remains on [GitHub](https://github.com/CodaLilitari/blender-sith) and [GitLab](https://gitlab.com/codalilitari/blender-sith). Verify each host's exact revision before treating copies as equivalent. The extension ID is `sith`; use one edition in a given Blender extension repository. Blender itself is not forked.
 
@@ -42,7 +42,7 @@ Use registered properties and readback assertions; raw ID-property writes bypass
 
 ## Validation status and historical evidence
 
-The [1.1.0 release record](docs/release-1.1.0-coda.1.md) records completed package and native validation. Keep three results separate: upstream no-Blender `core`, real Blender `app`, and bounded fork/package checks. Record the source revision and local changes, exact ZIP hashes, measured runtimes, failures and skips. Configured CI is not a successful run. [Test boundaries](tests/README.md) and [agent commands](docs/agent-use.md) describe the checks.
+The [1.2.0 release record](docs/release-1.2.0-coda.1.md) identifies the packages and their validation evidence. The [1.1.0 record](docs/release-1.1.0-coda.1.md) covers the preceding release. Keep three results separate: upstream no-Blender `core`, real Blender `app`, and bounded fork/package checks. Record the source revision and local changes, exact ZIP hashes, measured runtimes, failures and skips. Configured CI is not a successful run. [Test boundaries](tests/README.md) and [agent commands](docs/agent-use.md) describe the checks.
 
 The original fork started at upstream `ecc90131bcfdeabd400225e8a72ce94cbff1ec5c`. Its retained ten-check comparison on `bpy` 5.1.2 reported four passes/six failures upstream and ten passes in the focused fork. The [upstream receipt](tests/evidence/upstream-bpy-5.1.2.json), [original fork receipt](tests/evidence/coda-bpy-5.1.2.json) and [four-observation probe](tests/evidence/remaining-limitations-bpy-5.1.2.json) retain those source/harness identities. They do not describe today's core or prove current normal/color semantics.
 

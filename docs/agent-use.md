@@ -1,6 +1,6 @@
 # Background use and validation
 
-This guide covers the fork’s development source, including upstream `168dadc` and the reviewed pivot workflow. For an installed `v1.1.0-coda.1` extension, use the [matching package record](release-1.1.0-coda.1.md). Development-only examples below require a checkout with those features. See [fork provenance](../FORK.md).
+This guide covers Blender Sith (Coda) 1.2.0, including upstream `168dadc` and editable native pivots. Use the matching tagged source for the MCP tools and command-line launchers. See the [release record](release-1.2.0-coda.1.md) and [fork provenance](../FORK.md).
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
@@ -8,11 +8,11 @@ Use a disposable background process, isolated Blender preferences, two threads b
 
 ## Check a replacement model against an animation
 
-With matching development source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
+With matching 1.2.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
 
 ## Author or bake a native pivot
 
-On the development branch, set `joint.sith_model3do_pivot = (x, y, z)` on a Mesh or Empty joint to author its static native frame. Existing scenes with `3do_imported_pivot` remain readable. The default 3DO export preserves the native pivot. To write a zero pivot, enable **Bake Pivots** or pass `bakePivots=True` to `model3doExporter.export3do`. Compare the attachment frame as well as the visible surface when choosing between them. See the [Blender pipeline](blender-pipeline.md).
+In 1.2.0, set `joint.sith_model3do_pivot = (x, y, z)` on a Mesh or Empty joint to author its static native frame. Existing scenes with `3do_imported_pivot` remain readable. The default 3DO export preserves the native pivot. To write a zero pivot, enable **Bake Pivots** or pass `bakePivots=True` to `model3doExporter.export3do`. Compare the attachment frame as well as the visible surface when choosing between them. See the [Blender pipeline](blender-pipeline.md).
 
 ## Run the bounded fork checks
 
