@@ -4,7 +4,8 @@
 
 All runtime downloads, staged sources and results stay beneath RUNNER_TEMP,
 outside the checkout. The official Blender archive is pinned and checked
-against its official checksum list. No Git, install or publication actions.
+against its official checksum list. Staging uses the packager's bounded
+read-only Git index query in checkouts; no install or publication actions.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ import tomllib
 
 from ci_platform_validation import (checked_output, checksum_for_asset, companion_test_command, digest,
                                     extract_package, package_source_hashes, REGRESSION_SCHEMA,
-                                    run_logged, run_upstream_suites)
+                                    run_logged, run_upstream_suites, stage_extension_source)
 
 ROOT = Path(__file__).resolve().parents[1]
 BLENDER_VERSION = '5.1.2'
@@ -109,9 +110,9 @@ def main(argv=None):
                'scope': 'all four ZIP schemas; native exact Linux package; no UI or game-runtime claim'}
     try:
         run_logged(companion_test_command(ROOT), 'unit-tests', evidence, ROOT / 'tests', env, 300)
-        addon = ROOT / 'sith'
-        if addon.is_symlink() or any(p.is_symlink() for p in addon.rglob('*')):
-            raise ValueError('Source symlinks are not permitted')
+        # Resolve checkout membership once, before any Git-free platform copy.
+        selected = stage_extension_source(ROOT, output / 'selected-source')
+        addon = selected / 'sith'
         packages = evidence / 'packages'
         raw_manifest = (addon / 'blender_manifest.toml').read_bytes()
         receipt['source_manifest_sha256'] = hashlib.sha256(raw_manifest).hexdigest()
@@ -121,7 +122,7 @@ def main(argv=None):
             stage = output / ('staged-' + variant)
             stage.mkdir()
             shutil.copytree(addon, stage / 'sith', ignore=shutil.ignore_patterns('__pycache__', '*.pyc', '*.pyo'))
-            shutil.copy2(ROOT / 'LICENSE', stage / 'LICENSE')
+            shutil.copy2(selected / 'LICENSE', stage / 'LICENSE')
             staged_manifest = platform_manifest(raw_manifest, variant)
             (stage / 'sith' / 'blender_manifest.toml').write_bytes(staged_manifest)
             version = tomllib.loads(staged_manifest.decode('utf-8'))['version']

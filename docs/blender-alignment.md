@@ -27,6 +27,7 @@ that general-purpose tool collection.
 | --- | --- |
 | General Blender editing, node work, scene inspection and rendering | Blender itself; official Blender Lab MCP when an MCP interface is desired |
 | Blender API/manual lookup and interactive visual feedback | Official Blender Lab MCP documentation, screenshot and navigation tools |
+| Check a native KEY against a replacement 3DO before importing | Blender-Sith `audit_model_key`, or the same `auditModelKey` function in Blender Python |
 | Parse a Sith 3DO with the maintained importer | Blender-Sith `inspect_3do` |
 | Convert an authorized 3DO into a new geometry-only `.blend` | Blender-Sith `convert_3do_to_blend` |
 | Run exact synthetic 3DO/KEY/MAT checks and retain hash receipts | Blender-Sith `run_regression` |

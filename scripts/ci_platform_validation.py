@@ -5,12 +5,14 @@
 Manual CI only: all downloads, staged sources, packages, logs and fixtures live
 in a new directory beneath RUNNER_TEMP, outside the checkout. The official
 Blender DMG is checksum-verified and mounted read-only; desktop preferences are
-not changed. This script does not publish, install the extension, or invoke Git.
+not changed. This script does not publish or install the extension. Source
+staging uses the packager's bounded read-only Git index query in checkouts.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -34,6 +36,15 @@ BASE_URL = "https://ftp.blender.org/release/Blender5.2/"
 DMG_SHA256 = "acc05374485a272342d4b323c15ac01953e7f697da2f1bad8af9c3bf087267a4"
 EXPECTED_TESTS = 29
 REGRESSION_SCHEMA = "blender-sith-agentic-regression-v2"
+
+
+def stage_extension_source(source, destination):
+    """Use release membership before creating a Git-free platform source tree."""
+    spec = importlib.util.spec_from_file_location(
+        '_sith_ci_release_builder', Path(__file__).with_name('build_extension.py'))
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    return builder.stage_extension_source(source, destination)
 
 
 def digest(path):
@@ -397,12 +408,7 @@ def main(argv=None):
         run_logged(companion_test_command(ROOT), "unit-tests", evidence, ROOT / "tests", env, 300)
 
         stage = output / "staged-source"
-        stage.mkdir()
-        addon = ROOT / "sith"
-        if addon.is_symlink() or any(p.is_symlink() for p in addon.rglob("*")):
-            raise ValueError("Source symlinks are not permitted")
-        shutil.copytree(addon, stage / "sith", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"))
-        shutil.copy2(ROOT / "LICENSE", stage / "LICENSE")
+        stage_extension_source(ROOT, stage)
         manifest_path = stage / "sith" / "blender_manifest.toml"
         raw_manifest = manifest_path.read_bytes()
         manifest_path.write_bytes(macos_manifest(raw_manifest))

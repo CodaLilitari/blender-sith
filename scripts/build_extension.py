@@ -6,20 +6,30 @@ Run with --output-dir pointing outside every Git checkout. The default source is
 this script's repository; --source-dir selects another explicit source tree.
 Only sith/**/*.py, sith/**/*.toml and the original LICENSE are included. Unknown
 extension resources fail the build so future assets cannot silently disappear.
-Python bytecode/cache directories are ignored. Text bytes are normalized from
+Checkout membership uses the same bounded index query as make_addon.py; clean
+source archives need no Git. Python bytecode/cache directories are ignored. Text bytes are normalized from
 CRLF to LF; the receipt records both hashes.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
 import tomllib
 import zipfile
+
+# Use the adjacent reviewed upstream helper, including when this module is
+# loaded by its absolute filename rather than executed as a script.
+_membership_spec = importlib.util.spec_from_file_location(
+    '_sith_release_membership', Path(__file__).with_name('make_addon.py'))
+_membership = importlib.util.module_from_spec(_membership_spec)
+_membership_spec.loader.exec_module(_membership)
 
 
 def _is_link(path: Path) -> bool:
@@ -46,7 +56,9 @@ def _output_root(path: Path, source: Path) -> Path:
     # A checkout link to external storage still exposes generated files to Git.
     # Check the supplied route as well as the physical destination.
     for candidate in (lexical, output):
-        if candidate == source or source in candidate.parents:
+        # An 8.3 or namespace alias can cross source before a junction points
+        # outside it. Compare existing ancestor identities, not just spelling.
+        if _membership._is_within_source(candidate, source):
             raise ValueError("Output directory must be outside the source tree")
         for ancestor in (candidate, *candidate.parents):
             if os.path.lexists(ancestor / ".git"):
@@ -65,6 +77,15 @@ def _source_files(source: Path) -> list[tuple[str, Path]]:
         if (path == addon and not path.is_dir()) or (path != addon and not path.is_file()):
             raise ValueError(f"Invalid required source: {path.name}")
 
+    tracked = _membership._tracked_files(source)
+    tracked_dirs = None
+    if tracked is not None:
+        for path in required:
+            if path != addon and path not in tracked:
+                raise ValueError(f"Required package file is not tracked: {path.relative_to(source)}")
+        tracked_dirs = {parent for path in tracked for parent in path.parents
+                        if parent.is_relative_to(addon)}
+
     def on_walk_error(error):
         # A partial inventory must never become an apparently valid package.
         raise error
@@ -75,9 +96,12 @@ def _source_files(source: Path) -> list[tuple[str, Path]]:
             path = Path(directory) / name
             if _is_link(path):
                 raise ValueError(f"Source symlink or junction is forbidden: {path}")
-        dirs[:] = sorted(name for name in dirs if name != "__pycache__")
+        dirs[:] = sorted(name for name in dirs if name != "__pycache__"
+                         and (tracked_dirs is None or Path(directory) / name in tracked_dirs))
         for name in names:
             path = Path(directory) / name
+            if tracked is not None and path not in tracked:
+                continue
             if path.suffix in (".py", ".toml"):
                 if not path.is_file():
                     raise ValueError(f"Source is not a regular file: {path}")
@@ -85,6 +109,24 @@ def _source_files(source: Path) -> list[tuple[str, Path]]:
             elif path.suffix not in (".pyc", ".pyo"):
                 raise ValueError(f"Unclassified extension resource: {path.relative_to(addon)}; update the explicit package allowlist")
     return sorted(files)
+
+
+def stage_extension_source(source_dir: Path, destination: Path) -> Path:
+    """Copy selected release members before CI loses checkout/index context.
+
+    Selection, required-file and link checks are the same as a direct release
+    build. The new external tree retains original bytes for manifest adaptation.
+    It contains no Git metadata, caches or untracked scratch modules.
+    """
+    source = _source_root(source_dir)
+    target = _output_root(destination, source)
+    files = _source_files(source)
+    target.mkdir(parents=True, exist_ok=False)
+    for _, path in files:
+        output = target / path.relative_to(source)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(path, output)
+    return target
 
 
 def _manifest_identity(data: bytes) -> tuple[str, str]:

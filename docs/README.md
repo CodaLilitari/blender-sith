@@ -28,6 +28,8 @@ behind those options and the transformations performed by the add-on.
 | How do MAT pixels, cels, mipmaps and CMP palettes fit together? | [Materials and palettes](formats/materials.md) |
 | How do scene objects become joints, and what does sync reorder? | [Blender pipeline](blender-pipeline.md) |
 | Why does import/export require baking or reject an animation? | [Compatibility notes](blender-compatibility.md) |
+| How do I check a 3DO against a KEY before importing? | [Native binding audit and worked example](MCP.md#will-this-key-animate-the-intended-joint) |
+| How do I run the model tests or build the fork? | [Agent and CLI usage](agent-use.md) and [package build instructions](building.md) |
 | How is compatibility checked? | [Tests](../tests/README.md) and [asset verification](../tests/batch/README.md) |
 
 ## Reading The Layouts
@@ -58,8 +60,10 @@ original file -> decoded resource -> same-format codec write
 
 A codec can preserve opaque fields and original numeric values without Blender
 being able to represent them all. Blender round trips rebuild geometry and
-animation: LOD 0 is edited, pivots are baked, face normals follow geometry, and
-curves are sampled. Byte identity and equivalent visible poses are therefore
+animation. Blender edits LOD 0. The importer keeps the native pivot alongside
+editable geometry, and export preserves that offset by default or bakes it on request.
+Face normals follow geometry and animation curves are sampled.
+Byte identity and equivalent visible poses are therefore
 different checks. The [pipeline guide](blender-pipeline.md) lists these boundaries
 and the conditions for reusing binary metadata.
 
