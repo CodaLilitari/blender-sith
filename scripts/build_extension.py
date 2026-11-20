@@ -56,7 +56,9 @@ def _output_root(path: Path, source: Path) -> Path:
     # A checkout link to external storage still exposes generated files to Git.
     # Check the supplied route as well as the physical destination.
     for candidate in (lexical, output):
-        if candidate == source or source in candidate.parents:
+        # An 8.3 or namespace alias can cross source before a junction points
+        # outside it. Compare existing ancestor identities, not just spelling.
+        if _membership._is_within_source(candidate, source):
             raise ValueError("Output directory must be outside the source tree")
         for ancestor in (candidate, *candidate.parents):
             if os.path.lexists(ancestor / ".git"):
