@@ -1,6 +1,6 @@
 # Windows, Linux, macOS and universal packages
 
-Blender-Sith is a Python extension, not a custom Blender executable. This source is the **1.1.0 release**, distribution `v1.1.0-coda.1`, extension ID `sith`, display name **Blender Sith (Coda)**. Exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS. A release suffix identifies the distribution, not a different extension version.
+The latest packaged Blender-Sith extension is **1.1.0**, distribution `v1.1.0-coda.1`, extension ID `sith`, display name **Blender Sith (Coda)**. The release packages were validated on Windows Python/bpy, native Linux and native Apple Silicon macOS. The [default branch](../FORK.md) contains additional development changes.
 
 ## Latest install route
 
@@ -19,7 +19,7 @@ In Blender 5.0+, open Preferences > Add-ons > Install from Disk, select the ZIP 
 
 ## Build an installable ZIP
 
-The fork's deterministic builder needs Python 3.11+ and the standard library. It does not run Git or install dependencies:
+The fork's deterministic builder uses Python 3.11+ and the standard library. In a Git checkout it uses the index to select source files. In an extracted source archive it builds from the available files. See [package membership and build commands](building.md).
 
 ```sh
 python /path/to/source/scripts/build_extension.py \

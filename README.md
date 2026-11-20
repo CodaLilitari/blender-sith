@@ -1,11 +1,13 @@
-> **Community fork: Blender-Sith Agentic — 1.1.0 release.** This source integrates upstream **01ff4bd** with Coda's reviewed hexadecimal-property and native-pivot changes (PR16/PR23) and retained automation. The release is **v1.1.0-coda.1**; exact-package validation passed on Windows Python/bpy, native Linux and native Apple Silicon macOS; see [release evidence](docs/release-1.1.0-coda.1.md). The [published 1.0.4 record](docs/release-1.0.4-coda.1.md) remains historical evidence for its own bytes. See [provenance and migration](FORK.md), [package status](docs/platform-builds.md#latest-install-route) and [explicit API/target usage](docs/agent-use.md). Original Blender-Sith authorship and GPL history are retained. Development source adds an optional [3DO/KEY binding audit and native polygon counts](docs/MCP.md#will-this-key-animate-the-intended-joint) after the tagged release.
+> **Blender-Sith Agentic** is a community fork of [Blender-Sith by smlu](https://github.com/smlu/blender-sith). The default branch includes upstream `168dadc`, editable native pivots, optional pivot baking, and a [3DO/KEY binding audit](docs/MCP.md#will-this-key-animate-the-intended-joint). See [development changes and migration](FORK.md).
+>
+> For an installable build, use [v1.1.0-coda.1](docs/platform-builds.md#latest-install-route). Its [release record](docs/release-1.1.0-coda.1.md) identifies the packages tested on Windows, Linux and Apple Silicon macOS.
 
 <div align="center">
 
 # 🎮 Sith Engine Toolkit for Blender
 
 [![Blender](https://img.shields.io/badge/Blender-5.0+-orange.svg?style=flat&logo=blender)](https://www.blender.org/)
-[![Tests](https://github.com/smlu/blender-sith/actions/workflows/tests.yml/badge.svg)](https://github.com/smlu/blender-sith/actions/workflows/tests.yml)
+[![Fork tests](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml?query=branch%3Amaster)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-purple.svg?style=flat)
 

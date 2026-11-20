@@ -1,6 +1,6 @@
 # Background use and validation
 
-This guide describes the **1.1.0 API**, integrating upstream `01ff4bd` and the reviewed Coda hex/pivot changes. Exact-package validation passed; see the 1.1.0 release record and matching package receipts. Use [platform builds](platform-builds.md) for the separately identified published baseline and [FORK.md](../FORK.md) for provenance and limits.
+This guide covers the fork’s development source, including upstream `168dadc` and the reviewed pivot workflow. For an installed `v1.1.0-coda.1` extension, use the [matching package record](release-1.1.0-coda.1.md). Development-only examples below require a checkout with those features. See [fork provenance](../FORK.md).
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
@@ -9,6 +9,10 @@ Use a disposable background process, isolated Blender preferences, two threads b
 ## Check a replacement model against an animation
 
 With matching development source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
+
+## Author or bake a native pivot
+
+On the development branch, set `joint.sith_model3do_pivot = (x, y, z)` on a Mesh or Empty joint to author its static native frame. Existing scenes with `3do_imported_pivot` remain readable. The default 3DO export preserves the native pivot. To write a zero pivot, enable **Bake Pivots** or pass `bakePivots=True` to `model3doExporter.export3do`. Compare the attachment frame as well as the visible surface when choosing between them. See the [Blender pipeline](blender-pipeline.md).
 
 ## Run the bounded fork checks
 
@@ -33,7 +37,7 @@ The integrated upstream suites complement the fork harness:
 
 ```sh
 python tests/run.py --suite core
-blender --background --factory-startup --offline-mode --threads 2 --python-exit-code 1 --python tests/run.py -- --suite app
+python scripts/run_app_tests.py --blender /path/to/blender --timeout 600
 ```
 
 These are illustrative commands from the matching full-source root. Substitute the reviewed absolute interpreter/Blender path and supervise them with a deadline. Use Python 3.11+ and the dependencies declared in `tests/requirements.txt`; keep any environment outside the checkout. The installed add-on alone does not contain the development tests.
