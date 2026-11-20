@@ -63,7 +63,9 @@ pathlib.Path(sys.argv[1]).write_text(json.dumps({'paths': paths, 'cwd': os.getcw
         data = json.loads(report.read_text())
         self.assertEqual(set(data['paths']), {'BLENDER_USER_CONFIG', 'BLENDER_USER_SCRIPTS',
                                              'BLENDER_USER_DATAFILES', 'BLENDER_USER_EXTENSIONS'})
-        self.assertTrue(all(Path(p).parent == Path(data['cwd']) for p in data['paths'].values()))
+        # getcwd() can use the physical spelling of an aliased temporary directory.
+        self.assertTrue(all(Path(p).parent.resolve() == Path(data['cwd']).resolve()
+                            for p in data['paths'].values()))
         self.assertFalse(Path(data['cwd']).exists())
         self.assertFalse(Path(data['cwd']).is_relative_to(ROOT))
         self.assertEqual((user_settings / 'startup.blend').read_bytes(), b'untouched user settings')

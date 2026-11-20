@@ -95,7 +95,8 @@ class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="blender launcher test ")
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # Hosted Windows may use an 8.3 temp name; macOS may use /var -> /private/var.
+        self.root = Path(self.tmp.name).resolve()
         self.checkout = self.root / "source with spaces"
         (self.checkout / "scripts").mkdir(parents=True)
         (self.checkout / "tests").mkdir()
@@ -246,7 +247,7 @@ class LauncherTests(unittest.TestCase):
         result = self.invoke(extra=("--addon", str(addon)))
         self.assertEqual(result.returncode, 0, result.stderr)
         observed = json.loads((self.output / "results" / "observed.json").read_text())
-        self.assertEqual(Path(observed["addon"]), addon)
+        self.assertTrue(Path(observed["addon"]).samefile(addon))
 
     @unittest.skipUnless(shutil.which("pwsh") or shutil.which("powershell"), "PowerShell unavailable")
     def test_powershell_entrypoint_preserves_spaces(self):
