@@ -26,7 +26,7 @@ from .model3do import (
     Mesh3do
 )
 
-def import3do(file_path: Union[Path, str], mat_dirs: List[Union[Path, str]] = [], cmp_file: str = '', uvAbsolute_2_1: bool = True, importVertexColors: bool = True, importRadiusObj: bool = False, preserveOrder: bool = True, clearScene: bool = True, *, allowErrors: bool = False, warnings: Optional[List[str]] = None, importVertexNormals: bool = False, loadExternalMaterials: bool = True) -> bpy.types.Object:
+def import3do(file_path: Union[Path, str], mat_dirs: List[Union[Path, str]] = [], cmp_file: str = '', uvAbsolute_2_1: bool = True, importVertexColors: bool = True, importRadiusObj: bool = False, preserveOrder: bool = True, clearScene: bool = True, *, allowErrors: bool = False, warnings: Optional[List[str]] = None, importVertexNormals: bool = False, loadExternalMaterials: bool = True, importPivotHelpers: bool = False) -> bpy.types.Object:
     """Import strictly by default; opt-in recovery retains incomplete geometry.
 
     Set loadExternalMaterials=False for geometry-only import without MAT/CMP lookup.
@@ -112,6 +112,9 @@ def import3do(file_path: Union[Path, str], mat_dirs: List[Union[Path, str]] = []
                 if node.parentIdx == -1:
                     node.obj.parent_type = 'OBJECT'
                     node.obj.parent = baseObj
+            if importPivotHelpers:
+                for node in model.meshHierarchy:
+                    makePivotHelper(node.obj)
 
             # Keep recovery diagnostics with the imported model, not just stdout.
             if diagnostics:
