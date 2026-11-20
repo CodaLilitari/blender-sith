@@ -1,10 +1,18 @@
 # Background use and validation
 
-This guide describes the **1.1.0 API**, integrating upstream `01ff4bd` and the reviewed Coda hex/pivot changes. Exact-package validation passed; see the 1.1.0 release record and matching package receipts. Use [platform builds](platform-builds.md) for the separately identified published baseline and [FORK.md](../FORK.md) for provenance and limits.
+This guide covers Blender Sith (Coda) 1.2.0, including upstream `168dadc` and editable native pivots. Use the matching tagged source for the MCP tools and command-line launchers. See the [release record](release-1.2.0-coda.1.md) and [fork provenance](../FORK.md).
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
 Use a disposable background process, isolated Blender preferences, two threads by default and an actual subprocess deadline. Keep runtimes, dependencies, copied source, caches and outputs physically outside Git checkouts without junctions or links back into them. `-B` prevents Python cache writes, not cache reads; clean or isolate caches when source identity matters.
+
+## Check a replacement model against an animation
+
+With matching 1.2.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
+
+## Author or bake a native pivot
+
+In 1.2.0, set `joint.sith_model3do_pivot = (x, y, z)` on a Mesh or Empty joint to author its static native frame. Existing scenes with `3do_imported_pivot` remain readable. The default 3DO export preserves the native pivot. To write a zero pivot, enable **Bake Pivots** or pass `bakePivots=True` to `model3doExporter.export3do`. Compare the attachment frame as well as the visible surface when choosing between them. See the [Blender pipeline](blender-pipeline.md).
 
 ## Run the bounded fork checks
 
@@ -29,10 +37,10 @@ The integrated upstream suites complement the fork harness:
 
 ```sh
 python tests/run.py --suite core
-blender --background --factory-startup --offline-mode --threads 2 --python-exit-code 1 --python tests/run.py -- --suite app
+python scripts/run_app_tests.py --blender /path/to/blender --timeout 600
 ```
 
-These are illustrative commands from the matching full-source root. Substitute the reviewed absolute interpreter/Blender path and supervise them with a deadline. Use Python 3.11+ and the dependencies declared in `tests/requirements.txt`; keep any environment outside the checkout. The installed add-on alone does not contain the development tests.
+Run these commands from the matching full-source checkout with Python 3.11+ and the dependencies in `tests/requirements.txt`. The app launcher starts background Blender with temporary preferences, offline mode, script auto-execution disabled and two threads. It relays the suite exit code and returns 124 on timeout, 130 on interruption and 127 when Blender cannot start. For the fork's source-hash and JSON receipts, use the bounded fork checks above. The installed extension contains the add-on code; the full checkout supplies the test suites.
 
 The `core` suite exercises real codecs without fake Blender modules. `app` and `all` require real background Blender 5.0+; `all` runs both suites. A standalone core pass does not test scene adapters, `exportMat` or rendering. [tests/README.md](../tests/README.md) gives current coverage and limitations. Record source identity, runtime, totals, failures and skips; completed release checks are recorded separately from unexecuted game acceptance.
 
