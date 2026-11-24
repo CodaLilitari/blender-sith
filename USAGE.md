@@ -107,7 +107,7 @@ export/
 | --- | --- |
 | **MAT Directory** | Save MATs in this folder; default `mat` beside the 3DO. Accepts relative, absolute and blend-relative `//` folders. |
 | **Encoding** | Encode textures in the selected [format](#encodings). Defaults to RGBA32; selecting 2.1 or Grim initially selects Indexed. |
-| **ColorMap File** | Use this CMP palette for Indexed encoding; shown for Indexed only. Relative paths are beside the 3DO. |
+| **ColorMap File** | Use this CMP palette for Indexed encoding and for the 8-bit edition; shown for Indexed and with **8-bit and 16-bit Editions**. Relative paths are beside the 3DO. |
 | **Generate Mipmaps** | When enabled, create smaller texture levels down to 1x1. On by default; hidden for Grim, which uses the base image only. |
 | **Overwrite Existing MAT Files** | When enabled, replace existing MATs in the output folders. Off by default. |
 | **8-bit and 16-bit Editions** | When enabled, write every MAT twice with the same name: Indexed with the **ColorMap File** into the 8-bit folder and RGB 565 into the 16-bit folder. RGB 565 has no transparency: texels that are see-through in the 8-bit edition are opaque in the 16-bit edition, so a cut-out texture such as hair cards renders solid there. **Translucent** faces still blend in both. Replaces **MAT Directory** and **Encoding**. Off by default; hidden for Grim. |
