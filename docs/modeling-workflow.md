@@ -11,15 +11,16 @@ Hybrid (r5 to r7), Mandalorian Red (0.2.2) and the Red Sith Lightwhip (motion 03
 come from their release notes. Those releases are private review candidates. No model, KEY,
 texture or release file from them is in this repository.
 
-> **Provisional names.** The audit modules this guide refers to are being added alongside it.
-> Their function names may change before they merge. [The audits](#the-audits) table is the one
-> place that names them; fix any rename there.
+Every check runs from Python without Blender. Most also run from the optional
+[MCP companion](MCP.md) or from the **Sith Audits** panel in Blender
+([USAGE](../USAGE.md#-auditing-models)). [Where the tools fit](#where-the-tools-fit) lists them by
+stage. Agents should also read the [agent guide](agents.md).
 
 ## Contents
 
 - [Words and units](#words-and-units)
 - [The audits](#the-audits)
-- [The stages](#the-stages)
+- [The stages](#the-stages) and [where the tools fit](#where-the-tools-fit)
   1. [References](#1-references)
   2. [Body and scale](#2-body-and-scale)
   3. [Cutting into rigid pieces](#3-cutting-into-rigid-pieces)
@@ -68,8 +69,9 @@ texture or release file from them is in this repository.
 The audits read native files or the add-on's resource objects. They need no Blender and do not
 change their inputs. Reports follow `sith.key.modelBinding.auditModelKey`: a `status`,
 `issue_counts`, at most 32 detailed findings and totals for everything. The face removal and the
-reseat pass return new objects. `setDetailLevels` replaces the geosets of the model it is given and
-returns that model.
+reseat pass return new objects, and `reseatKeyFiles` writes only the KEYs that change, into a
+folder you name. `setDetailLevels` replaces the geosets of the model it is given and returns that
+model. The [audit index](audits/README.md) lists every status.
 
 | Check | Module | Entry points | Stages | Notes |
 | --- | --- | --- | --- | --- |
@@ -87,7 +89,7 @@ returns that model.
 | Euler forms | `sith.key.keyEuler` | `nearestEuler`, `eulerTwin`, `unwrapEuler` | 7 | [keylint](audits/keylint.md) |
 | Floor contact and contact slip | `sith.audit.ground` | `auditFloorContact`, `thingFloorHeight`, `lowestPoints`, `keySequence`, `CarriedMesh` | 2, 7 | [ground](audits/ground.md) |
 | Camera reading | `sith.audit.ground` | `auditCameraReading`, `thirdPersonViewDirection` | 7 | [ground](audits/ground.md) |
-| Reseat pass and its check | `sith.key.keyReseat` | names pending: reseat, check | 7 | [reseat](audits/reseat.md) |
+| Reseat pass and its check | `sith.key.keyReseat` | `reseatKeyFiles`, `reseatKey`, `checkReseat`, `checkReseatFiles`, `keySeats` | 7 | [reseat](audits/reseat.md) |
 
 In the Blender 3DO export dialog the export options are **Detail Levels**, **Fail Over Retail
 Limits**, **8-bit and 16-bit Editions** and **Dither Indexed Textures** (see
@@ -111,6 +113,30 @@ references -> body and scale -> rigid pieces -> caps and pivots -> textures and 
 | 7. Animations | Reseated stock KEYs; custom KEYs | Seat offsets, sweep, KEY lint and floor before and after |
 | 8. Packaging | Two GOBs, four detail levels | Budget within limits; changed members listed |
 | 9. Acceptance | Captures, retail runs, a multiplayer join | Both renderers in retail; a second player joins |
+
+### Where the tools fit
+
+The same checks run from three places. Python reaches every option. The
+[MCP companion](MCP.md#audit-tools) runs fixed jobs on copies of allowlisted files. The
+**Sith Audits** panel in the 3D View sidebar (tab **Sith**) runs them on the active model or on
+files ([USAGE](../USAGE.md#-auditing-models)).
+
+| Stage | Python | MCP tool | Blender |
+| --- | --- | --- | --- |
+| 1. References | none; render the hidden surfaces | none | none |
+| 2. Body and scale | `poseModel`, `auditFloorContact`, `lowestPoints` | `audit_ground` | **Audit Files** with **Floor Contact** |
+| 3. Rigid pieces | `auditSegmentation`, `pieceColours`, `removeFaces` | `audit_segmentation` | **Colour Pieces** and **Restore Colours** |
+| 4. Caps and pivots | `auditArticulation` | `audit_articulation` | **Audit Files** with **Joint Gaps** |
+| 5. Textures and editions | `encodeMat(..., dither=True)`, `export3do(..., textureEditions=True)` | none | 3DO export: **8-bit and 16-bit Editions**, **Dither Indexed Textures** |
+| 6. Hierarchy and node plan | `auditBudget`, `auditModelKey`, `trackRegistry` | `audit_budget`, `audit_model_key`, `audit_track_slots` | **Check Retail Limits** |
+| 7. Animations | `seatOffsets`, `auditArticulation`, `reseatKeyFiles`, `lintKeyHeader`, `scanKeyPops`, `keyPriorityReport`, `auditFloorContact`, `auditCameraReading` | `audit_articulation` (seat offsets included), `reseat_keys`, `lint_keys`, `audit_ground` | **Audit Files** (**Joint Gaps**, **Seat Offsets**, **Floor Contact**, **KEY Lint**) and **Reseat KEYs** |
+| 8. Packaging | `auditBudget`, `setDetailLevels`, `trackRegistry` | `audit_budget`, `audit_track_slots` | 3DO export: **Detail Levels**, **Fail Over Retail Limits**; **Check Retail Limits** |
+| 9. Acceptance | none; a game test | none | none |
+
+Some checks run only from Python: `removeFaces`, `keyPriorityReport`, `auditCameraReading`, carried
+weapon meshes (`CarriedMesh`) and layered poses (`PoseSequence`). The MCP tools and the panel play
+each KEY alone. Contact slip of planted feet runs from Python and from `audit_ground` with
+`contacts`. The panel's **Floor Contact** measures only the floor and floating feet.
 
 ## 1. References
 
@@ -191,6 +217,9 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 - `sith.audit.ground.auditFloorContact` gives each KEY's lowest point against the floor.
   `lowestPoints` compares it with stock Kyle's, sample by sample. The stock KEYs are not clean on
   Kyle either, so compare KEY by KEY ([ground](audits/ground.md)).
+- Through MCP: `audit_ground` with the engine floor (`floor: "engine"`, the default). Name the
+  crouch KEYs in `crouch_keys`; it has none by default. In Blender: **Audit Files** with **Floor
+  Contact**, whose **Crouch KEYs** default to `kycrchgn.key, kycrchbk.key`.
 
 ## 3. Cutting into rigid pieces
 
@@ -228,7 +257,8 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 4. Cut costume edges on their own boundary, such as the bottom of a belt or a hem, not through
    them.
 5. To see which piece owns a surface, draw every piece in its own solid colour and capture the
-   frame that shows the fault.
+   frame that shows the fault. In Blender, **Colour Pieces** does this for the active model, and
+   **Restore Colours** puts the previous colours back.
 6. Remove misplaced faces and close any opening with cap faces that carry the surrounding texture.
    Keep surface that belongs to the piece. On the Mandalorian's red-visor model the lint flagged
    torso surface under each shoulder plate. That is the torso's own shoulder, so it stayed.
@@ -249,6 +279,9 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
   opening with caps that take the surrounding material and texture vertices.
   `sith.audit.segmentation.pieceColours` gives each node, mesh or part a stable colour for the
   solid-colour view.
+- Through MCP: `audit_segmentation`, with `reference_key` and `zero_rotations: true` for these
+  characters. Each flagged mesh comes with its `high_faces` and `review_faces` (at most 256 of each
+  in the result; all of them in `report.json`). Face removal runs only from Python.
 - After removing faces, run the joint sweep again. On the T-visor model the blade had been covering
   pinholes. Removing it took the waist from 10 poses with daylight (16 lines) to 15 (24 lines), the
   left shoulder from 63 to 78 poses and the right elbow from 35 to 53. A floating blade is the
@@ -314,6 +347,10 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 - `sith.audit.articulation.auditArticulation` casts lines of sight through each joint, for every
   pose, from eight cameras. A line that meets no polygon is daylight. Run it before and after on
   the same sample points ([articulation](audits/articulation.md)).
+- Through MCP: `audit_articulation`. In Blender: **Audit Files** with **Joint Gaps**. Both default
+  to the rest pose. For a character cut at a stand KEY's seats, pass that KEY with zero rotations
+  (`reference_key` and `zero_rotations: true`, or **Reference KEY** with **Zero Rotations**). A
+  wrong reference gives no warning.
 - Lids, fins and steps are surface standing outside the body, not daylight. Capture the worst poses
   of each joint from the side and from behind (stage 9), and the deep bends.
 
@@ -410,9 +447,12 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 
 **Checks.**
 
-- `sith.audit.budget.auditBudget`: node count, geosets and per-mesh limits.
+- `sith.audit.budget.auditBudget`: node count, geosets and per-mesh limits. In Blender, **Check
+  Retail Limits** counts the active model as the 3DO exporter would build it. Through MCP,
+  `audit_budget` counts a 3DO file as stored.
 - `sith.key.modelBinding.auditModelKey` for each KEY: the slot each track addresses, and whether
-  the KEY's name for it matches the model's.
+  the KEY's name for it matches the model's. Through MCP: `audit_model_key` for one KEY, or
+  `lint_keys` with `model_path` for a folder.
 - `sith.audit.keylint.trackRegistry`: the custom slots each character uses, `slot_collision`
   where two characters drive one slot with different tracks, and `slot_intrusion` where one
   character's track would move a piece of the other's model. Checked while writing this guide on
@@ -424,6 +464,8 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
     at 63 in 8. Biddy's adapter tracks there would move her extra torso pieces and her collar.
     Darth Lilitari R9's notes rightly call her empty fillers in Biddy's range harmless; her extra
     pieces at 51 to 53 and 57 sit in the same range.
+
+  Through MCP: `audit_track_slots` with 2 to 8 characters.
 - Pose the deaths, falls and swims with `sith.audit.pose`. They turn the root nodes.
 
 ## 7. Animations
@@ -470,7 +512,9 @@ the right strafe (`kystrafr`, 9 of 40).
 
 1. Before shipping a close-fitting character, pose every stock KEY on it. Run `seatOffsets` for how
    far each KEY moves each node off its seat, and `auditArticulation` for daylight.
-2. Where seat offsets open a joint, reseat the KEYs with `sith.key.keyReseat`:
+2. Where seat offsets open a joint, reseat the KEYs with `sith.key.keyReseat.reseatKeyFiles`, the
+   MCP tool `reseat_keys` or **Reseat KEYs** in Blender. Each writes a reseated copy of only the
+   KEYs that change, never over a source KEY. The rules:
    - the arm, neck and head joints go back to their standing seats;
    - the hip piece moves between the torso and the legs, which stay exactly where the animation
      put them. Axis by axis in the hip's frame: where the hip's and the thighs' offsets point
@@ -479,10 +523,11 @@ the right strafe (`kystrafr`, 9 of 40).
      front-to-back offset grows.
    - Lilivane's KEYs add an optional step: where a waist gap is left, the hip follows the torso up
      by at most 0.0015 JKU. It closed her walking slit and cost a little at the hip joints.
-3. Run the reseat check on every reseated KEY. No joint's orientation may change. The torso,
-   thighs, calves and feet must stay where they were: within 0.00005 JKU between frames for Darth
-   Lilitari and 0.00006 for Lilivane. Report how far the hip moved; on Darth Lilitari, up to 0.0074
-   JKU.
+3. Run the reseat check (`checkReseat`) on every reseated KEY. All three routes run it on every
+   written KEY by default (`check=True`, the **Check** option). No joint's orientation may change.
+   The torso, thighs, calves and feet must stay where they were: within 0.00005 JKU between frames
+   for Darth Lilitari and 0.00006 for Lilivane. Report how far the hip moved; on Darth Lilitari, up
+   to 0.0074 JKU. A failed check (status `fail`) means that KEY must not be installed.
 4. Run the whole sweep again on the same sample points and compare it KEY by KEY. A KEY can go the
    other way: on Darth Lilitari, `kysbtred` went from no waist daylight to two lines in each of four
    poses.
@@ -496,7 +541,11 @@ the right strafe (`kystrafr`, 9 of 40).
 
 **Checks.** `seatOffsets` and `auditArticulation` ([articulation](audits/articulation.md)), the
 reseat check ([reseat](audits/reseat.md)), then the floor again with `auditFloorContact`: Lilivane
-R3's ground-contact tracks were recomputed on top of the reseated KEYs.
+R3's ground-contact tracks were recomputed on top of the reseated KEYs. Through MCP:
+`audit_articulation` (it adds seat offsets unless `seat_offsets` is false), `reseat_keys`, then
+`audit_articulation` again on the written KEYs with the same `step` and reference. In Blender:
+**Audit Files** with **Joint Gaps** and **Seat Offsets**, **Reseat KEYs**, then **Audit Files**
+again.
 
 ### Custom KEYs
 
@@ -561,6 +610,9 @@ R3's ground-contact tracks were recomputed on top of the reseated KEYs.
   feet. Contact slip measures sliding on the floor. It does not measure a joint sliding along its
   parent, such as the boot up the shin. Read that from `seatOffsets` (the foot, or the adapter
   that carries it, moving off its seat), or from the ankle in the calf's frame in `Pose.frames`.
+- Through MCP: `lint_keys` (loads KEYs the way the engine reads them, with `strictTracks=False`)
+  and `audit_ground` with `contacts` and `travel`. In Blender: **Audit Files** with **KEY Lint**.
+  Both play each KEY alone, so audit blended poses and priorities from Python.
 
 ### Weapon meshes a COG swaps
 
@@ -580,7 +632,7 @@ reaches the hip. Test with the mesh times copied from the COG.
 
 **Checks.** `auditFloorContact` with `CarriedMesh` entries follows the COG's mesh swaps without
 running the COG. `auditCameraReading` measures how long a mesh looks across the third-person view,
-which looks 6.84° down at a level aim ([ground](audits/ground.md)).
+which looks 6.84° down at a level aim ([ground](audits/ground.md)). Both run only from Python.
 
 ## 8. Packaging
 
@@ -617,7 +669,9 @@ which looks 6.84° down at a level aim ([ground](audits/ground.md)).
 
 **Checks.** `auditBudget` on the exported 3DO: status `within_limits` and 4 geosets.
 `budgetWarnings` merges a finding repeated across identical geosets into one line
-([budget](audits/budget.md)). `trackRegistry` for every pair of characters in the pack.
+([budget](audits/budget.md)). `trackRegistry` for every pair of characters in the pack. Through
+MCP: `audit_budget` on the exported file and `audit_track_slots` with every character of the pack.
+In Blender: **Check Retail Limits** with **Detail Levels** 4, before you export.
 
 ## 9. Acceptance
 
@@ -665,7 +719,7 @@ the rig.
 | Symptom | Likely cause | Check | Case |
 | --- | --- | --- | --- |
 | A piece stays behind when an arm moves (a "second shoulder", a ghost forearm) | The cut left limb surface in the torso | `auditSegmentation`; the pieces drawn in solid colours; `removeFaces` to fix | Mandalorian Red 0.2.2; Darth Lilitari R9.3; Lilivane R2 |
-| Daylight at the waist in saber moves; forearms off the elbows in armed runs | Stock KEY seat offsets | `seatOffsets`, then `auditArticulation`; reseat with `sith.key.keyReseat` and run both again | Darth Lilitari R9.10; Lilivane R3; Biddy Blas R3.6 |
+| Daylight at the waist in saber moves; forearms off the elbows in armed runs | Stock KEY seat offsets | `seatOffsets`, then `auditArticulation`; reseat with `reseatKeyFiles` (`reseat_keys`, **Reseat KEYs**) and run both again | Darth Lilitari R9.10; Lilivane R3; Biddy Blas R3.6 |
 | A slit above the belt at the back in armed walks | The walks carry the torso high and drop each thigh | `auditArticulation`; the reseat's hip-follows-torso step | Lilivane R3 |
 | The waist opens in the choke KEY or a strafe | Rotation alone, with every joint on its seat | `auditArticulation` with no matching seat offset; a reseat cannot help | Darth Lilitari R9.10 |
 | A dark smudge on the rear | The reference hid that surface and the generator filled it | The references and the 4K master; renders of the rear in idle, run and falls | Darth Lilitari R9.1 |
@@ -699,6 +753,9 @@ the rig.
   through another, and it does not see dark polygons.
 - **Compare on the same sample points, and run the whole set.** The first hip rule looked right in
   the flagged poses and opened the walks. Only the full sweep showed it.
+- **Read the audit's status, not the job's.** An MCP job's `status: passed` means the audit ran and
+  its result was accepted. The verdict is in `audit.<section>.status`. Every status is listed in the
+  [audit index](audits/README.md#statuses).
 - **Reproduce before you change.** Darth Lilitari R9.2 first rebuilt R9.1 with the new copy of the
   tools and no changes. It reproduced R9.1's model and every MAT byte for byte. Only then did the
   changes start.
@@ -750,7 +807,7 @@ from sith.audit.budget import auditBudget, budgetWarnings
 from sith.audit.segmentation import auditSegmentation, zeroRotationPose
 from sith.audit.keylint import lintKeyHeader
 from sith.audit.articulation import auditArticulation, loadKeyFolder, referencePose, seatOffsets
-from sith.audit.ground import auditFloorContact, thingFloorHeight
+from sith.audit.ground import auditFloorContact, keySequence, thingFloorHeight
 
 model, _ = load3do('character.3do')
 keys = loadKeyFolder('key')                  # {file name: KEY}, sorted by name
@@ -764,7 +821,7 @@ for line in budgetWarnings(budget):
 # These characters are cut with every joint straight at the standing KEY's seats. For a model cut
 # in its rest pose, leave out `reference` in the calls below.
 cuts = auditSegmentation(model, reference=zeroRotationPose(model, stand=stand))
-print('cuts', cuts['status'], cuts['issue_counts'])
+print('cuts', cuts['status'], cuts['severity_counts'])
 
 for name, key in keys.items():               # header lint; 'binding' holds auditModelKey's report
     header = lintKeyHeader(key, model, target='JKDF2')
@@ -778,31 +835,43 @@ saber = {name: keys[name] for name in ('kysbthr2.key', 'kysbforc.key')}   # time
 gaps = auditArticulation(model, saber, reference=referencePose(model, stand, 0, zeroRotations=True))
 print('gaps', gaps['status'], gaps['issue_counts'])
 
-# The standing floor of the stock player template (movesize 0.065). Crouch KEYs need their own
-# floor: see audits/ground.md.
-floor = auditFloorContact(model, list(keys.values()), floor=thingFloorHeight(model, 0.065))
+# The engine floor of the stock player template (movesize 0.065). The crouch KEYs play on the
+# crouch floor (audits/ground.md).
+standing = thingFloorHeight(model, 0.065)
+crouching = thingFloorHeight(model, 0.065, crouching=True)
+crouch = ('kycrchgn.key', 'kycrchbk.key')
+sequences = [keySequence(key, floor=crouching if name in crouch else None, name=name)
+             for name, key in keys.items()]
+floor = auditFloorContact(model, sequences, floor=standing)
 print('floor', floor['status'], floor['issue_counts'])
 
 pose = poseModel(model, [PoseLayer.playKey(keys['kysbthr2.key'], 0.0, 1)])
 print(pose.frames.shape)                     # one 4x4 joint frame per node
 ```
 
-Every status above can be `review` on a sound character. Read the findings before you accept or
-fix anything:
+A sound character still shows findings here. Read them before you accept or fix anything:
 
 - The cut lint's `review` findings are mostly the normal overlaps at joints. Its `high` findings
-  (status `suspect`) come first. Darth Lilitari R9.10 has none.
-
-- On a 64-node model each stock KEY reports `joints_below_model`, and its binding report
-  `declared_joint_count_differs`, because the stock KEYs declare JOINTS 18 or 19. That is expected
-  until the KEYs are padded.
+  (status `suspect`) come first. `severity_counts` gives the findings by severity; `issue_counts`
+  counts them by kind, `info` included. Darth Lilitari R9.10 has no `high` finding.
+- A KEY that declares fewer JOINTS than the model has nodes reports `joints_below_model`, and its
+  binding report `declared_joint_count_differs`. The stock KEYs declare JOINTS 18 or 19, so on a
+  64-node model every stock KEY reports both until it is padded to JOINTS 64. The padded KEYs the
+  releases ship (stage 8) report neither.
 - A KEY that animates a filler slot reports `joint_name_differs` in its binding report. On Darth
   Lilitari R9.10 these are the four KEYs with a track at index 18.
-- Floor findings in jumps, falls, deaths, swims and crouches are mostly by design. Compare with
-  stock Kyle KEY by KEY.
+- `seatOffsets` reports `off_seat` when any KEY moves a node more than 0.00002 units from its seat.
+  Most stock KEYs move the root and the torso carrier away from where the stand KEY holds them, so
+  this is the usual status. An offset matters at a joint that opens: read the offsets of that
+  joint's `seat_nodes` (in the joint-gap report) next to its daylight counts.
+- Floor findings in jumps, falls, deaths and swims are mostly by design, and the stock KEYs are not
+  clean on Kyle either. Compare with stock Kyle KEY by KEY, on the same floors.
 
-A sweep of all 91 stock KEYs at step 2 is 1,745 poses; time a few KEYs first. For custom KEYs add
-`scanKeyPops`, and for a pack `trackRegistry` ([keylint](audits/keylint.md)).
+`loadKeyFolder` uses the default KEY loader and stops at a KEY it cannot read. Pass `errors=[]` to
+skip such files and list them. Load custom KEYs with `loadKey(path, strictTracks=False)` before you
+lint them (stage 7), add `scanKeyPops`, and for a pack `trackRegistry`
+([keylint](audits/keylint.md)). A sweep of all 91 stock KEYs at step 2 is 1,745 poses; time a few
+KEYs first.
 
 ## Sources
 

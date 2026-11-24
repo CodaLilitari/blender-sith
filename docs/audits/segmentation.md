@@ -183,8 +183,10 @@ faces leave their vertices in place, so indices stay stable.
 `pieceColours(model, by='node')` gives each hierarchy node a solid colour, as `rgb` (sRGB, 0 to 1)
 and `hex`; `by='mesh'` gives one per mesh and `by='part'` colours each node by its rigid part. A colour
 depends only on its index, so a node keeps its colour across models and runs. This is the data for the
-solid-colour view that found Darth Lilitari's second shoulder; a Blender operator for it is not part
-of this change.
+solid-colour view that found Darth Lilitari's second shoulder. In Blender, **Colour Pieces** in the
+Sith Audits panel paints the active model by node or by rigid part with these colours, and
+**Restore Colours** puts the previous colours back
+([USAGE](../../USAGE.md#colour-pieces-and-restore-colours)).
 
 ## What it reports on released characters
 

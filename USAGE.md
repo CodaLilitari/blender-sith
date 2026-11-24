@@ -8,9 +8,9 @@ A quick guide to importing, editing and exporting game models, animations and te
 | --- | --- |
 | 📦 **3DO Models** | [Import](#-importing-3do-models) · [Import options](#import-options) · [Export](#-exporting-3do-models) · [Export model textures](#exporting-model-textures) |
 | 🎬 **KEY Animations** | [Import](#-importing-key-animations) · [Export](#-exporting-key-animations) · [Targets](#target-choices) · [Flags](#flags-menu) · [Priority mask](#high-priority-nodes) |
-| 🖼️ **MAT Textures** | [Import](#-importing-mat-textures) · [Export](#exporting-mat-textures) · [Export options](#mat-export-options) · [Encodings](#encodings) |
+| 🖼️ **MAT Textures** | [Import](#️-importing-mat-textures) · [Export](#exporting-mat-textures) · [Export options](#mat-export-options) · [Encodings](#encodings) |
 | 📤 **MAT Export Locations** | [Outliner](#outliner) · [Image Editor](#image-editor) · [Material Properties](#material-properties) |
-| 🎛️ **Editing** | [3DO properties](#-editing-3do-properties) · [Object properties](#-object-3do-properties) · [Face properties](#-mesh-face-properties) · [Extra Light preview](#extra-light-preview) |
+| 🎛️ **Editing** | [3DO properties](#️-editing-3do-properties) · [Object properties](#-object-3do-properties) · [Face properties](#-mesh-face-properties) · [Extra Light preview](#extra-light-preview) |
 | 🔍 **Audits** | [Sith Audits panel](#-auditing-models) · [Check Retail Limits](#check-retail-limits) · [Colour Pieces](#colour-pieces-and-restore-colours) · [Audit Files](#audit-files) · [Reseat KEYs](#reseat-keys) |
 | 🔧 **Help** | [Troubleshooting](#-troubleshooting) · [Compatibility notes](docs/blender-compatibility.md) · [Technical reference](docs/README.md) |
 
@@ -365,7 +365,7 @@ file/Blender guarantees are not a game-runtime test.
 ## 🔍 Auditing Models
 
 Open the 3D View sidebar (**N**) and its **Sith** tab. The **Sith Audits** panel
-runs the [native audits](docs/audits/) on the active model or on files. Each
+runs the [native audits](docs/audits/README.md) on the active model or on files. Each
 report goes to a Text datablock; open it in the **Text Editor**. The commands
 do not change model data. **Reseat KEYs** writes new KEYs to the folder you
 choose; the others write no files. A finding is a lead to look at in Blender or
