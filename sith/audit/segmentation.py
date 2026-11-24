@@ -153,6 +153,12 @@ def zeroRotationPose(model, *, stand=None, frame: float = 0.0, nodes: Optional[I
     nodes ``stand`` drives, else the nodes named like Kyle's skeleton, else every node) get zero
     rotation, and the position ``stand`` gives them at ``frame`` where it has a track. Every other node
     keeps its rest position and rotation.
+
+    With ``stand`` and the default ``nodes`` this is the reference the joint-gap audit builds with
+    ``sith.audit.articulation.referencePose(model, stand, frame, zeroRotations=True)``: the same joint
+    frames, mesh frames and vertices. That one also records the nodes the KEY drives in
+    ``local.restWeight`` and ``local.drivenBy`` and describes itself; this one also works without a
+    KEY, or for chosen ``nodes``.
     """
     count = len(model.meshHierarchy)
     if nodes is None:

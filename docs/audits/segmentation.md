@@ -49,7 +49,10 @@ Ownership and enclosure only mean something in the pose the pieces were cut in. 
 rest pose stored in the 3DO. That is right for Mandalorian Red. Darth Lilitari, Lilivane and Biddy
 Blas were cut with Kyle's joints at zero rotation; pass
 `reference=zeroRotationPose(model, stand=standKey)`, which puts the joints the stand KEY drives at its
-positions with zero rotation, as Red's joint sweep did.
+positions with zero rotation, as Red's joint sweep did. The joint-gap audit's
+`referencePose(model, standKey, 0, zeroRotations=True)` builds the same pose, and either works for
+either audit. Without a stand KEY, `zeroRotationPose(model)` straightens the nodes named like Kyle's
+skeleton at their rest positions.
 
 ### Three kinds of evidence
 
@@ -159,12 +162,17 @@ when the joint turns, is the one to cut back.
 
 ```python
 from sith.model.model3doEdit import removeFaces
+from sith.model.model3doLoader import load3do
 from sith.model.model3doWriter import save3do
-from sith.model.model3doLoader import Model3doFileVersion
 
+model, version = load3do('character.3do')
 fixed, change = removeFaces(model, meshIdx=0, faces=[339, 340, 341], geoset=0)
-save3do(fixed, 'character_fixed.3do', Model3doFileVersion.Version2_1, 'ghost faces removed')
+save3do(fixed, 'character_fixed.3do', version, 'ghost faces removed')
 ```
+
+Save with the version `load3do` returned. `save3do` writes vertex and face colours in the form of the
+version it is given (2.1 one intensity, 2.2 RGB, 2.3 RGBA), so a 2.2 or 2.3 model saved as 2.1 has
+its colours averaged into intensities.
 
 `removeFaces` returns a new model and a report. Vertices are welded by position. An opening is a loop
 of edges that had a face on both sides before and has one after. Where two openings touch at one point
@@ -186,7 +194,7 @@ kept faces keep their order and caps follow), and each capped loop's points, cap
 up to 64 vertex indices and a `reason`. `open_edges_before` and `open_edges_after` count the edges with
 a face on one side only. `repeated_edges_before` and `repeated_edges_after` count the directed edges
 that two faces run the same way, a sign of a face stored twice or turned inside out against its
-neighbour; a removal should not raise it. `unused_vertices` counts the vertices no face uses any more.
+neighbour; a removal should not add any. `unused_vertices` counts the vertices no face uses any more.
 Removed faces leave their vertices in place, so indices stay stable.
 
 ## Piece colours

@@ -153,7 +153,9 @@ the opening.
   the nodes the KEY drives. Red's Kyle-skeleton builds keep Kyle's bent rest rotations in the 3DO
   but are cut with every joint straight at the standing KEY's seats, so this is the reference for
   them. Use the standing KEY the character was built against: if it carries adapter tracks, those
-  nodes take its positions and zero rotation too.
+  nodes take its positions and zero rotation too. The cut lint's
+  `zeroRotationPose(model, stand=key, frame=frame)` builds the same pose; either works for either
+  audit.
 
 ## Parameters
 
@@ -200,7 +202,7 @@ size; counts and ratios do not change.
   geometry does not fit it is reported as not measured, with the reason.
 - Lines are tested exactly. Red's script sampled each line at the centre of a pixel in a 360-pixel
   render of the whole model, about 0.0006 JK units across for a Kyle-scale character. Counts at
-  the edge of an opening therefore differ by a few lines from his. With its lines moved to his
-  pixel centres, this port gives his counts pose for pose.
+  the edge of an opening therefore differ by a few lines from his. The module has no option to
+  sample his pixel centres, so it does not reproduce his reports line for line.
 - On a Kyle-scale character with 14,600 faces per detail level, 91 KEYs at step 2 (1,745 poses)
   took 80 seconds on one core and peaked at 165 MB, model included.

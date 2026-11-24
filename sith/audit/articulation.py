@@ -207,7 +207,9 @@ def referencePose(model, key=None, frame: float = 0.0, *, zeroRotations: bool = 
     position at ``frame`` and its rotation, or zero rotation with ``zeroRotations``; every other
     node keeps its rest position and rotation. Red's builds of Kyle-skeleton characters are cut
     with the standing KEY's seats and zero rotation, which is the reference his sweep used:
-    ``referencePose(model, standKey, 0, zeroRotations=True)``.
+    ``referencePose(model, standKey, 0, zeroRotations=True)``. The cut lint's
+    ``sith.audit.segmentation.zeroRotationPose(model, stand=standKey, frame=0)`` builds the same
+    joint frames, mesh frames and vertices; either can be passed to either audit.
     """
     if key is None:
         if zeroRotations:

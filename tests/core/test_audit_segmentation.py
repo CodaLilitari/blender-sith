@@ -379,6 +379,34 @@ class PartTests(unittest.TestCase):
         np.testing.assert_allclose(pose.frames[2][:3, 3], SHOULDER)
         np.testing.assert_allclose(pose.frames[2][:3, :3], np.eye(3), atol=1e-12)
 
+    def test_zero_rotation_pose_is_the_joint_gap_reference(self):
+        # The cut lint's helper and the joint-gap audit's build the same reference from a stand KEY.
+        from sith.audit.articulation import referencePose
+        model, _ = character()
+        model.meshHierarchy[1].rotation = Vector3f(5.0, 0.0, 0.0)          # not driven: keeps its rest
+        model.meshHierarchy[2].rotation = Vector3f(20.0, 10.0, 5.0)
+        stand = key({0: [entry(0, pos=(0.001, 0.0, 0.0), rot=(3.0, 0.0, 0.0))],
+                     2: [entry(0, pos=(0.031, 0.0, 0.054), rot=(40.0, 0.0, 0.0)),
+                         entry(1, pos=(0.032, 0.001, 0.056), rot=(10.0, 5.0, 0.0))]})
+        for frame in (0.0, 1.0):
+            with self.subTest(frame=frame):
+                cut = zeroRotationPose(model, stand=stand, frame=frame)
+                gaps = referencePose(model, stand, frame, zeroRotations=True)
+                np.testing.assert_array_equal(cut.frames, gaps.frames)
+                np.testing.assert_array_equal(cut.meshFrames, gaps.meshFrames)
+                self.assertEqual(sorted(cut.vertices), sorted(gaps.vertices))
+                for m in cut.vertices:
+                    np.testing.assert_array_equal(cut.vertices[m], gaps.vertices[m])
+                np.testing.assert_array_equal(cut.local.positions, gaps.local.positions)
+                np.testing.assert_array_equal(cut.local.rotations, gaps.local.rotations)
+                np.testing.assert_allclose(cut.local.rotations[1], [5.0, 0.0, 0.0])
+                self.assertEqual(auditSegmentation(model, reference=cut, detail='info')['findings'],
+                                 auditSegmentation(model, reference=gaps, detail='info')['findings'])
+                # Only the joint-gap reference records which nodes the KEY drove.
+                self.assertEqual((cut.local.drivenBy[2], gaps.local.drivenBy[2]), ((), (0,)))
+        # At frame 1 the arm sits at the stand's second position, on a torso moved 0.001 in x.
+        np.testing.assert_allclose(cut.frames[2][:3, 3], [0.033, 0.001, 0.056])
+
     def test_bones_run_to_child_joints_or_toward_the_geometry(self):
         model, _ = character()
         bones = partBones(model)

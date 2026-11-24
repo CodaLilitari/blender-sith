@@ -86,8 +86,9 @@ were cut. A wrong reference gives plausible counts and no warning.
   as Mandalorian Red.
 - Characters cut with every joint straight at a stand KEY's seats, such as Darth Lilitari,
   Lilivane and Biddy Blas, need that stand KEY with zero rotations:
-  `referencePose(model, stand, 0, zeroRotations=True)`, or `zeroRotationPose(model, stand=stand)`
-  for the cut lint. Use the stand KEY the character was cut against. The MCP tools take
+  `referencePose(model, stand, 0, zeroRotations=True)`, or `zeroRotationPose(model, stand=stand)`,
+  which builds the same pose; either works for both audits. Use the stand KEY the character was
+  cut against. The MCP tools take
   `reference_key` with `zero_rotations: true`. In **Audit Files**, choose **Reference KEY** with
   **Zero Rotations**.
 
