@@ -113,6 +113,13 @@ the geosets:
 Mesh 0 'torso' has 600 vertices; JKDF2 allows 512 per mesh (88 over) in geosets 0, 1, 2, 3
 ```
 
+A line for a per-mesh limit (vertices, texture vertices or faces) names every
+geoset whose mesh has the same name and count, also past the 32 listed findings:
+`mesh_counts` is complete. A line for a face, material or mesh-index finding
+names only the geosets of the listed findings. Findings that no line covers are
+counted in a last line per code, such as `8 more 'too_many_face_corners'
+findings are not listed`.
+
 ## Limits
 
 - The audit counts what is stored. It does not run the engine. A model within
