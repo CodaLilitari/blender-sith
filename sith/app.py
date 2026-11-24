@@ -266,7 +266,11 @@ class ExportMat(bpy.types.Operator, ExportHelper):
     )
     dither: bpy.props.BoolProperty(
         name='Dither', default=False,
-        description='Indexed only: where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid. A material image in sith_dither_mask_<cel> limits dithering to its white texels',
+        description='Indexed only: where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid, and a pattern never adds a color the CMP never darkens. A material image in sith_dither_mask_<cel> limits dithering to its white texels',
+    )
+    avoid_fullbright: bpy.props.BoolProperty(
+        name='Avoid Fullbright Colours', default=False,
+        description='Indexed only: use no palette color that the CMP never darkens (it would glow in shadow), for skin and cloth that must take shadow. Needs a JKDF2/MOTS CMP with its light table',
     )
 
     _source = None
@@ -280,6 +284,7 @@ class ExportMat(bpy.types.Operator, ExportHelper):
         if self.encoding == 'INDEXED':
             layout.prop(self, 'cmp_file')
             layout.prop(self, 'dither')
+            layout.prop(self, 'avoid_fullbright')
         if self.target != 'GRIM':
             layout.prop(self, 'generate_mipmaps')
         layout.prop(self, 'overwrite_existing')
@@ -314,7 +319,8 @@ class ExportMat(bpy.types.Operator, ExportHelper):
             written = exportMat(self._source, self.filepath, self.encoding, self.cmp_file,
                                 overwrite=self.overwrite_existing, generateMipmaps=self.generate_mipmaps,
                                 grim=self.target == 'GRIM', warnings=warnings,
-                                dither=getattr(self, 'dither', False) and self.encoding == 'INDEXED')
+                                dither=getattr(self, 'dither', False) and self.encoding == 'INDEXED',
+                                avoidFullbright=getattr(self, 'avoid_fullbright', False) and self.encoding == 'INDEXED')
         except (ImportError, OSError, ReferenceError, RuntimeError, ValueError) as error:
             self.report({'ERROR'}, f'Cannot export MAT: {error}')
             return {'CANCELLED'}
@@ -673,7 +679,11 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
     )
     texture_dither: bpy.props.BoolProperty(
         name='Dither Indexed Textures', default=False,
-        description='Where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid. A material image in sith_dither_mask_0 limits dithering to its white texels',
+        description='Where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid, and a pattern never adds a color the CMP never darkens. A material image in sith_dither_mask_0 limits dithering to its white texels',
+    )
+    texture_avoid_fullbright: bpy.props.BoolProperty(
+        name='Avoid Fullbright Colours', default=False,
+        description='Indexed textures use no palette color that the CMP never darkens (it would glow in shadow), for skin and cloth that must take shadow. Needs a JKDF2/MOTS CMP with its light table',
     )
 
     obj = None
@@ -705,6 +715,7 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
             if editions or self.texture_encoding == 'INDEXED':
                 textures.prop(self, 'texture_cmp_file')
                 textures.prop(self, 'texture_dither')
+                textures.prop(self, 'texture_avoid_fullbright')
             if not grim:
                 textures.prop(self, 'texture_mipmaps')
             textures.prop(self, 'overwrite_textures')
@@ -738,7 +749,9 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
             # Hidden options keep their values; pass only those that the dialog shows.
             # Scripted stand-ins may predate these options and use their defaults.
             editions = getattr(self, 'texture_editions', False) and version != Model3doFileFormat.GrimFandango
-            dither = getattr(self, 'texture_dither', False) and (editions or self.texture_encoding == 'INDEXED')
+            indexed = editions or self.texture_encoding == 'INDEXED'
+            dither = getattr(self, 'texture_dither', False) and indexed
+            avoidFullbright = getattr(self, 'texture_avoid_fullbright', False) and indexed
             warnings = []
             export3do(self.obj, self.filepath, version, self.absolute_uv, self.export_vert_colors, self.sync_mesh_list,
                       bakePivots=self.bake_pivots,
@@ -749,7 +762,8 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
                       failOverBudget=getattr(self, 'fail_over_budget', False),
                       textureDither=dither, textureEditions=editions,
                       textureDirectory8bit=getattr(self, 'texture_directory_8bit', 'mat8'),
-                      textureDirectory16bit=getattr(self, 'texture_directory_16bit', 'mat16'))
+                      textureDirectory16bit=getattr(self, 'texture_directory_16bit', 'mat16'),
+                      textureAvoidFullbright=avoidFullbright)
         except (AssertionError, ImportError, ValueError, OSError, RuntimeError) as e:
             print(f"\nAn exception was encountered while exporting object '{self.obj.name}' to 3DO format!\nError: {e}")
             self.report({'ERROR'}, f'Error: {e}')
@@ -1272,20 +1286,30 @@ class RestoreColours(bpy.types.Operator):
 
 
 def _audit_key_paths(folder: Path, names: str):
-    """Regular .key files in ``folder`` by name, sorted without case; ``names`` selects some."""
-    available = {path.name.casefold(): path for path in folder.iterdir()
-                 if path.is_file() and path.suffix.casefold() == '.key'}
-    if not names.strip():
-        return sorted(available.values(), key=lambda path: (path.name.casefold(), path.name))
-    chosen = []
-    for name in (part.strip() for part in names.split(',')):
-        if not name:
-            continue
-        if Path(name).name != name or name.casefold() not in available:
-            raise ValueError(f"The KEY folder has no file named '{name}'")
-        if available[name.casefold()] not in chosen:
-            chosen.append(available[name.casefold()])
-    return sorted(chosen, key=lambda path: (path.name.casefold(), path.name))
+    """Regular .key files in ``folder`` by name, sorted without case; ``names`` selects some.
+
+    Names are compared without case, as the engine finds KEYs. When two files share a selected
+    name in different case (or, with no selection, any name), either could be the KEY meant, so
+    the folder is refused, as the MCP server refuses it.
+    """
+    available = {}
+    for path in folder.iterdir():
+        if path.is_file() and path.suffix.casefold() == '.key':
+            available.setdefault(path.name.casefold(), []).append(path)
+    wanted = list(available)
+    if names.strip():
+        wanted = []
+        for name in (part.strip() for part in names.split(',')):
+            if not name:
+                continue
+            if Path(name).name != name or name.casefold() not in available:
+                raise ValueError(f"The KEY folder has no file named '{name}'")
+            if name.casefold() not in wanted:
+                wanted.append(name.casefold())
+    for name in wanted:
+        if len(available[name]) > 1:
+            raise ValueError('KEY names differ only in case: ' + ', '.join(sorted(path.name for path in available[name])))
+    return sorted((available[name][0] for name in wanted), key=lambda path: (path.name.casefold(), path.name))
 
 
 class AuditFiles(bpy.types.Operator, ImportHelper):

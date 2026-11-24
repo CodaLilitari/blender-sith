@@ -36,7 +36,7 @@ kDefaultVertexColor = Vector4f(0.0, 0.0, 0.0, 1.0)
 kHNDefaultFlags     = 0
 kHNDefaultType      = 0
 
-def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat', detailLevels=1, failOverBudget=False, textureDither=False, textureEditions=False, textureDirectory8bit='mat8', textureDirectory16bit='mat16'):
+def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat', detailLevels=1, failOverBudget=False, textureDither=False, textureEditions=False, textureDirectory8bit='mat8', textureDirectory16bit='mat16', textureAvoidFullbright=False):
     """Build the resource from a Blender model, then write the requested version.
 
     ``detailLevels`` writes that many identical geosets, 1 to 4 (``setDetailLevels``).
@@ -46,8 +46,15 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
 
     ``textureEditions`` writes each MAT twice with the same name: Indexed 8-bit with the
     CMP into ``textureDirectory8bit`` and RGB565 16-bit into ``textureDirectory16bit``.
-    Both folders resolve like ``textureDirectory``, must differ, and are published with
-    the model in one step. ``textureDither`` dithers Indexed output (``encodeMat``).
+    RGB565 has no alpha and its MATs set no transparency, so texels that are transparent in
+    the 8-bit edition (alpha below 0.5, index 0) are opaque in the 16-bit edition; a warning
+    names it.
+    Both folders resolve like ``textureDirectory`` and must be different folders: the same
+    path in another case, or two paths to one folder, is refused (``_same_folder``, and again
+    in ``publishExportFiles``). They are published with the model in one step.
+    ``textureDither`` dithers Indexed output (``encodeMat``). ``textureAvoidFullbright`` keeps
+    the palette entries the CMP never darkens out of Indexed output (``encodeMat``'s
+    ``avoidFullbright``). Both apply to the 8-bit edition only.
     """
     with BenchmarkMeter(' done in {:.4f} sec.'):
         print("exporting 3DO: %r..." % (path), end="")
@@ -56,6 +63,8 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
             raise ValueError('8-bit and 16-bit MAT editions are for JKDF2/MOTS; Grim Fandango uses Indexed MATs only')
         if exportTextures and textureDither and not textureEditions and textureEncoding != 'INDEXED':
             raise ValueError('Dithering applies to Indexed textures; select Indexed encoding or both editions')
+        if exportTextures and textureAvoidFullbright and not textureEditions and textureEncoding != 'INDEXED':
+            raise ValueError('Avoiding fullbright colours applies to Indexed textures; select Indexed encoding or both editions')
 
         bpy.path.ensure_ext(path, '.3do')
         model_name = os.path.basename(path)
@@ -94,14 +103,15 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
         if textureEditions:
             indexedFolder = _texture_folder(textureDirectory8bit, destination, 'mat8')
             colorFolder = _texture_folder(textureDirectory16bit, destination, 'mat16')
-            if os.path.normcase(indexedFolder.resolve()) == os.path.normcase(colorFolder.resolve()):
+            if _same_folder(indexedFolder, colorFolder):
                 raise ValueError('The 8-bit and 16-bit MAT directories must differ: both editions use the same file names')
-            textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither, **options)
-                        + prepareMatExports(materials, colorFolder, 'RGB565', '', **options))
+            textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither,
+                                          avoidFullbright=textureAvoidFullbright, edition='8-bit edition', **options)
+                        + prepareMatExports(materials, colorFolder, 'RGB565', '', edition='16-bit edition', **options))
         else:
             textures = prepareMatExports(materials, _texture_folder(textureDirectory, destination, 'mat'),
                                          textureEncoding, palette, grim=version == Model3doFileFormat.GrimFandango,
-                                         dither=textureDither, **options)
+                                         dither=textureDither, avoidFullbright=textureAvoidFullbright, **options)
         staging = Path(tempfile.mkdtemp(prefix='.sith-export-', dir=destination.parent))
         keepRecovery = False
         try:
@@ -130,6 +140,23 @@ def _texture_folder(directory, destination: Path, default: str) -> Path:
     """Resolve a MAT folder: blend-relative // and absolute paths as given, others beside the 3DO."""
     folder = Path(bpy.path.abspath(os.fspath(directory) or default))
     return folder if folder.is_absolute() else destination.parent / folder
+
+
+def _same_folder(first: Path, second: Path) -> bool:
+    """Whether two folder paths can name one folder.
+
+    True for the same resolved path ignoring case, which is one folder on case-insensitive
+    volumes (the macOS and Windows defaults), and for two existing paths to one directory
+    (``os.path.samefile`` also sees bind mounts, which ``resolve`` does not). Folders that do not
+    exist yet are checked again by ``publishExportFiles`` once it has created them.
+    """
+    first, second = first.resolve(), second.resolve()
+    if os.path.normcase(str(first)).casefold() == os.path.normcase(str(second)).casefold():
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
 
 
 def _check_retail_budget(model: Model3do, fail: bool, warnings) -> None:

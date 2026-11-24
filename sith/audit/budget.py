@@ -138,13 +138,37 @@ _kMeshMessages = {
     'material_out_of_range': 'face {face} uses material {material}, but the model lists {materials}',
 }
 
+# Per-mesh limit codes and the ``mesh_counts`` field each one compares.
+_kMeshLimitCounts = {'too_many_' + key: key for key in _kMeshCounts}
+
+
+def _sameMeshGeosets(report: Dict, item: Dict) -> List[int]:
+    """Every geoset whose mesh ``item['mesh']`` has the same name and count as a per-mesh finding.
+
+    ``mesh_counts`` lists every mesh of every geoset, so this finds the repeats of the finding
+    that fall past the report's detail limit. Each match is a finding of the same code: the count
+    is the same, so it is over the same limit.
+    """
+    key = _kMeshLimitCounts[item['code']]
+    geosets = []
+    for row in report['geosets']:
+        rows = row.get('mesh_counts') or []
+        counts = rows[item['mesh']] if item['mesh'] < len(rows) else None
+        if (counts is not None and counts.get('index') == item['mesh'] and counts.get('name') == item['name']
+                and counts.get(key) == item['count']):
+            geosets.append(row['geoset'])
+    return geosets
+
 
 def budgetWarnings(report: Dict) -> List[str]:
     """One line per finding of ``auditBudget``; repeats across geosets share one line.
 
     A finding that differs only in its geoset (for example in identical detail levels) is
-    listed once with every geoset it occurs in. Findings beyond the report's detail limit are
-    summarized by code with their number.
+    listed once with the geosets it occurs in. For the per-mesh limits (vertices, texture
+    vertices and faces) the line names every such geoset, also those whose findings fall past
+    the report's detail limit, because the per-mesh counts of every geoset are complete. Face,
+    material and mesh-index findings name only the geosets of the listed findings. Findings
+    that no line covers are summarized by code with their number.
     """
     target = report['target']
     entries: Dict[tuple, Dict] = {}
@@ -153,6 +177,15 @@ def budgetWarnings(report: Dict) -> List[str]:
         entry = entries.setdefault(details, {'item': item, 'geosets': []})
         if 'geoset' in item:
             entry['geosets'].append(item['geoset'])
+
+    # How many findings the lines stand for, by code: one per geoset a line names, or one for a
+    # model-wide finding. The rest are summarized below.
+    covered: Dict[str, int] = {}
+    for entry in entries.values():
+        item = entry['item']
+        if item['code'] in _kMeshLimitCounts:
+            entry['geosets'] = sorted(set(entry['geosets']) | set(_sameMeshGeosets(report, item)))
+        covered[item['code']] = covered.get(item['code'], 0) + max(len(entry['geosets']), 1)
 
     lines = []
     for entry in entries.values():
@@ -170,10 +203,7 @@ def budgetWarnings(report: Dict) -> List[str]:
             text = _kMeshMessages[code].format(target=target, **item)
             lines.append(f"Mesh {item['mesh']} '{item['name']}' {text} in {where}")
 
-    listed: Dict[str, int] = {}
-    for item in report['findings']:
-        listed[item['code']] = listed.get(item['code'], 0) + 1
     for code, total in sorted(report['issue_counts'].items()):
-        if total > listed.get(code, 0):
-            lines.append(f"{total - listed.get(code, 0)} more '{code}' findings are not listed")
+        if total > covered.get(code, 0):
+            lines.append(f"{total - covered.get(code, 0)} more '{code}' findings are not listed")
     return lines

@@ -135,6 +135,28 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(budgetWarnings(report), [
             "Mesh 0 'torso' has 600 vertices; JKDF2 allows 512 per mesh (88 over) in geosets 0, 1, 2, 3"])
 
+    def test_copies_past_the_detail_limit_are_named_on_their_mesh_line(self):
+        # Ten meshes over the vertex limit in four identical geosets: 40 findings, of which the
+        # first 32 are listed (geosets 0 to 2, then meshes 0 and 1 of geoset 3).
+        subject = setDetailLevels(model([(i, f'mesh{i}', 600) for i in range(10)]), 4)
+        report = auditBudget(subject)
+        self.assertEqual((report['issue_counts'], len(report['findings'])), ({'too_many_vertices': 40}, DETAIL_LIMIT))
+        self.assertEqual(budgetWarnings(report), [
+            f"Mesh {i} 'mesh{i}' has 600 vertices; JKDF2 allows 512 per mesh (88 over) in geosets 0, 1, 2, 3"
+            for i in range(10)])
+
+    def test_a_copy_with_another_count_is_not_named_and_stays_counted(self):
+        subject = model([(i, f'mesh{i}', 600) for i in range(10)], geosets=4)
+        subject.geosets[3].meshes[9] = mesh(9, 'mesh9', 700)
+        report = auditBudget(subject)
+        self.assertEqual(report['issue_counts'], {'too_many_vertices': 40})
+        lines = budgetWarnings(report)
+        self.assertEqual(len(lines), 11)
+        self.assertEqual(lines[8], "Mesh 8 'mesh8' has 600 vertices; JKDF2 allows 512 per mesh (88 over) in geosets 0, 1, 2, 3")
+        self.assertEqual(lines[9], "Mesh 9 'mesh9' has 600 vertices; JKDF2 allows 512 per mesh (88 over) in geosets 0, 1, 2")
+        # Geoset 3's mesh 9 has 700 vertices: past the 32 listed findings and on no line.
+        self.assertEqual(lines[10], "1 more 'too_many_vertices' findings are not listed")
+
     def test_mots_shares_the_limits_and_unsourced_targets_report_counts_only(self):
         oversized = model([(0, 'big', 900, 900, 900, 30)], geosets=5, nodes=70)
         self.assertEqual(auditBudget(oversized, 'MOTS')['issue_counts'], auditBudget(oversized)['issue_counts'])
