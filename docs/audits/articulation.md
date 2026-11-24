@@ -80,7 +80,8 @@ Options of `auditArticulation`:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `step` | `2.0` | Sample every `step` frames from frame 0 (`keyFrameTimes`). |
+| `step` | `2.0` | Sample every `step` frames from frame 0 up to `FRAMES - 1` (`keyFrameTimes`). |
+| `toEnd` | `False` | Also sample the last interval: every `step` below `FRAMES`, then `FRAMES` itself. |
 | `cameras` | `SWEEP_CAMERAS` | (azimuth, elevation) pairs in degrees. |
 | `joints` | derived | `(parent, child)` or `(label, parent, child)` entries, by node name or index; `KYLE_JOINTS` for Kyle's 15. |
 | `reference` | rest pose | The pose the parts were cut in, from `referencePose` or `poseModel`. |
@@ -108,7 +109,8 @@ for everything.
   placed (`kind` `core` or `membrane`, `count`, `dropped`, `radius`), the poses and KEYs with
   daylight, the total lines, the largest separation with its KEY and frame, and its worst entries.
 - `keys`: for each KEY, poses sampled, poses with daylight, lines, and lines by joint.
-- `parameters`: the step, cameras, reference and settings used. `reading` repeats the rule below.
+- `parameters`: the step, `toEnd`, cameras, reference and settings used. `reading` repeats the rule
+  below.
 
 **A count is a lead, not a verdict.** Counts are lines of sight summed over the cameras. One or two
 lines in a pose are usually a grazing sliver at a rim. Dozens are an opening you can see. A line
@@ -125,7 +127,7 @@ Each such pair counts a line twice, as Red's script did.
 KEY's position and the node's seat, with the frame. A seat is the node's position in the
 reference: the model's rest positions by default, or a reference KEY such as the standing KEY. The
 offset vector is in the parent's frame. It is measured at every whole frame and every entry frame
-below the KEY's `FRAMES`.
+below the KEY's `FRAMES`. With `toEnd=True` it is measured at `FRAMES` too.
 
 Each joint in the audit lists its `seat_nodes`: the driven nodes whose tracks place the child part
 relative to the parent part. For Kyle's waist these are the torso carrier, the hip and the torso.
@@ -151,7 +153,9 @@ the opening.
   the nodes the KEY drives. Red's Kyle-skeleton builds keep Kyle's bent rest rotations in the 3DO
   but are cut with every joint straight at the standing KEY's seats, so this is the reference for
   them. Use the standing KEY the character was built against: if it carries adapter tracks, those
-  nodes take its positions and zero rotation too.
+  nodes take its positions and zero rotation too. The cut lint's
+  `zeroRotationPose(model, stand=key, frame=frame)` builds the same pose; either works for either
+  audit.
 
 ## Parameters
 
@@ -183,6 +187,13 @@ size; counts and ratios do not change.
   puppet timing, looping, fades, the player's aim pitch or blends the game makes on its own, such
   as a fire animation over a run. Layers are not looped or stopped: past its last frame a shorter
   KEY keeps following its last entry.
+- By default the last interval of each KEY is not sampled. The samples stop at or before
+  `FRAMES - 1`, as in Red's sweep, but the engine plays on to `FRAMES`: a looping KEY shows every
+  time below `FRAMES` before it wraps, and a KEY that holds or fades at its end stops at `FRAMES`
+  (`rdPuppet_AdvanceTrack`). In 27 of the 91 stock KEYs a joint turns more than one degree, or
+  moves more than 0.0001 units, between frame `FRAMES - 1` and `FRAMES`. Pass `toEnd=True` to
+  `auditArticulation` and `seatOffsets` to sample that interval too. The MCP tools and the Sith
+  Audits panel use the default.
 - Every polygon counts as cover, whichever way it faces. The engine skips single-sided faces seen
   from behind (`rdModel3_DrawMesh`), so an opening seen into an open shell can be missed.
 - The sweep finds gaps. It does not find one part pushing through another, and it does not find
@@ -191,7 +202,7 @@ size; counts and ratios do not change.
   geometry does not fit it is reported as not measured, with the reason.
 - Lines are tested exactly. Red's script sampled each line at the centre of a pixel in a 360-pixel
   render of the whole model, about 0.0006 JK units across for a Kyle-scale character. Counts at
-  the edge of an opening therefore differ by a few lines from his. With its lines moved to his
-  pixel centres, this port gives his counts pose for pose.
+  the edge of an opening therefore differ by a few lines from his. The module has no option to
+  sample his pixel centres, so it does not reproduce his reports line for line.
 - On a Kyle-scale character with 14,600 faces per detail level, 91 KEYs at step 2 (1,745 poses)
   took 80 seconds on one core and peaked at 165 MB, model included.

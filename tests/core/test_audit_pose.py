@@ -125,9 +125,53 @@ class SamplingTests(unittest.TestCase):
         self.assertIsNone(keyTrack(k, 0))
 
     def test_frame_times(self):
+        # By default the times stop at FRAMES - 1, as Red's sweep sampled: 2.5 is not sampled.
         self.assertEqual(keyFrameTimes(key({}, frames=5)), [0, 1, 2, 3, 4])
         self.assertEqual(keyFrameTimes(key({}, frames=3), 0.5), [0, 0.5, 1.0, 1.5, 2.0])
         self.assertEqual(keyFrameTimes(key({}, frames=0)), [0])
+
+    def test_frame_times_to_the_end(self):
+        # The engine plays the last interval up to FRAMES: every k * step below it, then FRAMES.
+        self.assertEqual(keyFrameTimes(key({}, frames=3), 0.5, toEnd=True), [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+        self.assertEqual(keyFrameTimes(key({}, frames=10), 3, toEnd=True), [0, 3, 6, 9, 10])
+        self.assertEqual(keyFrameTimes(key({}, frames=10), 2, toEnd=True), [0, 2, 4, 6, 8, 10])
+        self.assertEqual(keyFrameTimes(key({}, frames=3), 0.1, toEnd=True)[-3:], [2.8, 2.9, 3.0])
+        self.assertEqual(keyFrameTimes(key({}, frames=5), 100, toEnd=True), [0, 5])
+        self.assertEqual(keyFrameTimes(key({}, frames=1), toEnd=True), [0, 1])
+        self.assertEqual(keyFrameTimes(key({}, frames=0), toEnd=True), [0])
+        times = keyFrameTimes(key({}, frames=3), 2, toEnd=True)
+        self.assertTrue(all(isinstance(t, float) for t in times))
+        # The last interval moves: a track with deltas from frame 2 reaches 3 only at FRAMES.
+        k = key({1: [entry(2, (0, 0, 0), dpos=(1, 0, 0), flags=KeyframeFlag.PositionChange)]}, frames=3)
+        positions = [sampleTrack(keyTrack(k, 1), t)[0][0] for t in keyFrameTimes(k, toEnd=True)]
+        self.assertEqual(positions, [-2.0, -1.0, 0.0, 1.0])
+
+
+class StepTests(unittest.TestCase):
+    """Every audit that samples KEY times takes only a positive finite step, so no report holds NaN."""
+
+    def test_bad_steps_are_rejected_everywhere(self):
+        from sith.audit.articulation import auditArticulation
+        from sith.audit.ground import auditCameraReading, auditFloorContact, keySequence, lowestPoints
+        from sith.audit.keylint import PopLimits
+        from sith.audit.segmentation import testPoses
+        model = chain()
+        k = key({1: [entry(0)]}, frames=4)
+        calls = {
+            'keyFrameTimes': lambda s: keyFrameTimes(k, s),
+            'keyFrameTimes toEnd': lambda s: keyFrameTimes(k, s, toEnd=True),
+            'auditArticulation': lambda s: auditArticulation(model, [k], step=s),
+            'testPoses': lambda s: testPoses([k], step=s),
+            'keySequence': lambda s: keySequence(k, s),
+            'auditFloorContact': lambda s: auditFloorContact(model, [], step=s),
+            'lowestPoints': lambda s: lowestPoints(model, k, step=s),
+            'auditCameraReading': lambda s: auditCameraReading(model, [], step=s),
+            'PopLimits': lambda s: PopLimits(step=s),
+        }
+        for name, call in calls.items():
+            for step in (math.inf, -math.inf, math.nan, 0.0, -1.0):
+                with self.subTest(call=name, step=step), self.assertRaises(ValueError):
+                    call(step)
 
 
 class HierarchyTests(unittest.TestCase):
@@ -224,6 +268,46 @@ class BlendTests(unittest.TestCase):
         local = blendLocalPose(self.model, [PoseLayer(a, 0, lowPri=2), PoseLayer(b, 0, lowPri=1)])
         np.testing.assert_allclose(local.positions[1], [3, 0, 0])
         self.assertEqual(local.drivenBy[1], (0,))
+
+    # Node 1 rests at (1, 0, 0) with rotation (0, 170, 0). Each KEY below gives it one delta:
+    # A (2, 0, 0) and pitch +10; B (0, 2, 0) and roll +20; C (0, 0, 4) and yaw -20.
+    def deltas(self):
+        return (key({1: [entry(0, (3, 0, 0), (10, 170, 0))]}, name='a.key'),
+                key({1: [entry(0, (1, 2, 0), (0, 170, 20))]}, name='b.key'),
+                key({1: [entry(0, (1, 0, 4), (0, 150, 0))]}, name='c.key'))
+
+    def test_second_priority_accumulates_under_a_partial_best(self):
+        # B arrives first and is demoted to second when A outranks it; C joins B at the second
+        # priority. Delta: 0.5 A + (1 - 0.5) (0.25 B + 0.5 C); rest weight 1 - 0.5 - 0.75 * 0.5.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(b, 0, weight=0.25, lowPri=1),
+                                            PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(c, 0, weight=0.5, lowPri=1)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.25, 1.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 5.0, 2.5])
+        self.assertAlmostEqual(local.restWeight[1], 0.125)
+        self.assertEqual(local.drivenBy[1], (1, 0, 2))
+
+    def test_a_middle_priority_replaces_the_second(self):
+        # Under A (weight 0.5) B takes the second slot, then C, at a priority between, replaces it.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(b, 0, lowPri=1), PoseLayer(c, 0, lowPri=2)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.0, 2.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 10.0, 0.0])
+        self.assertAlmostEqual(local.restWeight[1], 0.0)
+        self.assertEqual(local.drivenBy[1], (0, 2))
+
+    def test_second_priority_weights_above_one_are_averaged(self):
+        # B and C share the second priority at full weight: their sum, 2, is divided out before
+        # they fill the half A leaves. Delta: 0.5 A + 0.5 (B + C) / 2; nothing is left at rest.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(b, 0, lowPri=1), PoseLayer(c, 0, lowPri=1)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.5, 1.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 5.0, 5.0])
+        self.assertAlmostEqual(local.restWeight[1], 0.0)
+        self.assertEqual(local.drivenBy[1], (0, 1, 2))
 
 
 if __name__ == '__main__':

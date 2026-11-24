@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Rigid-piece cut lint and face removal on synthetic models (no Blender, no game data)."""
+import copy
 import json
 import math
 import unittest
@@ -102,17 +103,18 @@ def node(idx, name, parent, mesh, position=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 
     return n
 
 
-def character(strip=False, shard=False, shards=0):
+def character(strip=False, shard=False, shards=0, inner=False):
     """Torso box at the origin, a head above it and a long right arm hanging beside it.
 
     ``strip``: a flap of torso faces from the top edge out to the arm's outer side and down it, the
     way a cut leaves arm surface in the torso. ``shard``: a loose tetrahedron of torso faces by the
-    end of the arm. ``shards``: that many loose tetrahedra along the arm. Returns the model and the
-    torso face indices of each added feature.
+    end of the arm. ``shards``: that many loose tetrahedra along the arm. ``inner``: a loose flap of
+    arm faces inside the torso on its centre line, from z 0 to 0.02, both sides. Returns the model
+    and the face indices of each added feature (``inner`` in the arm's mesh, the rest in the torso's).
     """
     torso = MeshBuilder()
     body = torso.box((-0.02, -0.01, 0.0), (0.02, 0.01, 0.06))
-    added = {'body': body, 'connect': [], 'hang': [], 'shard': [], 'shards': []}
+    added = {'body': body, 'connect': [], 'hang': [], 'shard': [], 'shards': [], 'inner': []}
     if strip:
         ys = [-0.01, -0.005, 0.0, 0.005, 0.01]
         levels = [0.05, 0.03, 0.01, -0.01]
@@ -130,6 +132,12 @@ def character(strip=False, shard=False, shards=0):
     head.box((-0.008, -0.008, 0.065), (0.008, 0.008, 0.085), n=2)
     arm = MeshBuilder()
     arm.box((0.025, -0.005, -0.025), (0.035, 0.005, 0.055), n=4)
+    if inner:
+        for z0 in (0.0, 0.005, 0.01, 0.015):
+            added['inner'].append(arm.face([(0.0, -0.004, z0), (0.0, 0.004, z0), (0.0, 0.004, z0 + 0.005),
+                                            (0.0, -0.004, z0 + 0.005)]))
+            added['inner'].append(arm.face([(0.0, -0.004, z0), (0.0, -0.004, z0 + 0.005), (0.0, 0.004, z0 + 0.005),
+                                            (0.0, 0.004, z0)]))
     model = Model3do('synthetic.3do')
     geoset = Model3doGeoSet()
     geoset.meshes = [torso.mesh(0, 'torso', material=1), head.mesh(1, 'head', offset=(0.0, 0.0, 0.065)),
@@ -138,6 +146,68 @@ def character(strip=False, shard=False, shards=0):
     model.meshHierarchy = [node(0, 'k_torso', -1, 0), node(1, 'k_head', 0, 1, (0.0, 0.0, 0.065)),
                            node(2, 'k_rshouldr', 0, 2, SHOULDER)]
     return model, added
+
+
+def siblings():
+    """Kyle's waist: hip and torso both hang from a meshless root, with a head on the torso.
+
+    A flap of torso faces (normals forward, +y) hangs from the torso's lower front edge down in
+    front of the hip, 0.002 clear of it: hip surface left in the torso. Returns the model and the
+    flap's face indices in the torso's mesh.
+    """
+    torso = MeshBuilder()
+    torso.box((-0.02, -0.01, 0.001), (0.02, 0.01, 0.06))
+    flap = []
+    for i in range(4):
+        for j in range(3):
+            x0, x1, z0, z1 = -0.02 + 0.01 * i, -0.01 + 0.01 * i, 0.001 - 0.01 * (j + 1), 0.001 - 0.01 * j
+            flap.append(torso.face([(x0, 0.01, z0), (x0, 0.01, z1), (x1, 0.01, z1), (x1, 0.01, z0)]))
+    hip = MeshBuilder()
+    hip.box((-0.02, -0.006, -0.04), (0.02, 0.006, -0.001))
+    head = MeshBuilder()
+    head.box((-0.008, -0.008, 0.065), (0.008, 0.008, 0.085), n=2)
+    model = Model3do('siblings.3do')
+    geoset = Model3doGeoSet()
+    geoset.meshes = [hip.mesh(0, 'hip'), torso.mesh(1, 'torso'), head.mesh(2, 'head', offset=(0.0, 0.0, 0.065))]
+    model.geosets = [geoset]
+    model.meshHierarchy = [node(0, '$$$dummy', -1, -1), node(1, 'k_hip', 0, 0), node(2, 'k_torso', 0, 1),
+                           node(3, 'k_head', 2, 2, (0.0, 0.0, 0.065))]
+    return model, flap
+
+
+def one_mesh(builder, name='mesh.3do'):
+    """A model whose only node carries the builder's mesh."""
+    model = Model3do(name)
+    geoset = Model3doGeoSet()
+    geoset.meshes = [builder.mesh(0, 'mesh')]
+    model.geosets = [geoset]
+    model.meshHierarchy = [node(0, 'mesh', -1, 0)]
+    return model
+
+
+def tooth(quad=False):
+    """A square opening in a flat ring with a kept tooth sticking into it, its tip lifted out of plane.
+
+    The tooth is a triangle, or with ``quad`` a quad with two tips, standing on the opening's lower
+    edge. The removed faces fan from a point inside the opening. Returns the builder, the tooth's
+    face index and the removed faces.
+    """
+    builder = MeshBuilder()
+    c, a = (-0.2, -1.0, 0.0), (0.2, -1.0, 0.0)
+    tips = [(0.15, -0.3, 1.0), (-0.15, -0.3, 1.0)] if quad else [(0.0, -0.2, 1.0)]
+    outline = [(-1.0, -1.0, 0.0), c, a, (1.0, -1.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
+    for u, v in zip(outline, outline[1:] + outline[:1]):
+        builder.face([v, u, (2 * u[0], 2 * u[1], 0.0), (2 * v[0], 2 * v[1], 0.0)])
+    kept = builder.face([c, a] + tips)
+    hole = [outline[0], c] + tips[::-1] + [a] + outline[3:]
+    centre = (0.0, 0.5, 0.0)
+    removed = [builder.face([u, v, centre]) for u, v in zip(hole, hole[1:] + hole[:1])]
+    return builder, kept, removed
+
+
+def face_area(mesh, face):
+    p = np.array([tuple(mesh.vertices[v]) for v in face.vertexIdxs])
+    return sum(0.5 * np.linalg.norm(np.cross(p[k] - p[0], p[k + 1] - p[0])) for k in range(1, len(p) - 1))
 
 
 def snapshot(model):
@@ -260,6 +330,17 @@ class GeometryHelperTests(unittest.TestCase):
                 self.fail('a loop edge runs against the loop')
             self.assertIn((b, a), directed)
 
+    def test_triangulation_avoids_blocked_edges_and_triangles(self):
+        square = [(0, 0, 0), (1, 0, 0), (1, 1, 0.1), (0, 1, 0)]
+        self.assertEqual(triangulatePolygon(square), [(0, 1, 3), (1, 2, 3)])
+        self.assertEqual(triangulatePolygon(square, blockedEdges=[(3, 1)]), [(0, 1, 2), (0, 2, 3)])
+        self.assertEqual(triangulatePolygon(square, blockedTriangles=[(3, 0, 1)]), [(0, 1, 2), (0, 2, 3)])
+        # Neighbours on the loop, including the closing pair, cannot be blocked: they are its edges.
+        self.assertEqual(triangulatePolygon(square, blockedEdges=[(0, 1), (0, 3)]), [(0, 1, 3), (1, 2, 3)])
+        self.assertIsNone(triangulatePolygon(square, blockedEdges=[(0, 2), (1, 3)]))
+        self.assertIsNone(triangulatePolygon(square[:3], blockedTriangles=[(0, 1, 2)]))
+        self.assertEqual(triangulatePolygon(square[:2]), [])
+
 
 class PartTests(unittest.TestCase):
     def hierarchy(self, names):
@@ -297,6 +378,34 @@ class PartTests(unittest.TestCase):
         pose = zeroRotationPose(model)
         np.testing.assert_allclose(pose.frames[2][:3, 3], SHOULDER)
         np.testing.assert_allclose(pose.frames[2][:3, :3], np.eye(3), atol=1e-12)
+
+    def test_zero_rotation_pose_is_the_joint_gap_reference(self):
+        # The cut lint's helper and the joint-gap audit's build the same reference from a stand KEY.
+        from sith.audit.articulation import referencePose
+        model, _ = character()
+        model.meshHierarchy[1].rotation = Vector3f(5.0, 0.0, 0.0)          # not driven: keeps its rest
+        model.meshHierarchy[2].rotation = Vector3f(20.0, 10.0, 5.0)
+        stand = key({0: [entry(0, pos=(0.001, 0.0, 0.0), rot=(3.0, 0.0, 0.0))],
+                     2: [entry(0, pos=(0.031, 0.0, 0.054), rot=(40.0, 0.0, 0.0)),
+                         entry(1, pos=(0.032, 0.001, 0.056), rot=(10.0, 5.0, 0.0))]})
+        for frame in (0.0, 1.0):
+            with self.subTest(frame=frame):
+                cut = zeroRotationPose(model, stand=stand, frame=frame)
+                gaps = referencePose(model, stand, frame, zeroRotations=True)
+                np.testing.assert_array_equal(cut.frames, gaps.frames)
+                np.testing.assert_array_equal(cut.meshFrames, gaps.meshFrames)
+                self.assertEqual(sorted(cut.vertices), sorted(gaps.vertices))
+                for m in cut.vertices:
+                    np.testing.assert_array_equal(cut.vertices[m], gaps.vertices[m])
+                np.testing.assert_array_equal(cut.local.positions, gaps.local.positions)
+                np.testing.assert_array_equal(cut.local.rotations, gaps.local.rotations)
+                np.testing.assert_allclose(cut.local.rotations[1], [5.0, 0.0, 0.0])
+                self.assertEqual(auditSegmentation(model, reference=cut, detail='info')['findings'],
+                                 auditSegmentation(model, reference=gaps, detail='info')['findings'])
+                # Only the joint-gap reference records which nodes the KEY drove.
+                self.assertEqual((cut.local.drivenBy[2], gaps.local.drivenBy[2]), ((), (0,)))
+        # At frame 1 the arm sits at the stand's second position, on a torso moved 0.001 in x.
+        np.testing.assert_allclose(cut.frames[2][:3, 3], [0.033, 0.001, 0.056])
 
     def test_bones_run_to_child_joints_or_toward_the_geometry(self):
         model, _ = character()
@@ -377,6 +486,8 @@ class AuditTests(unittest.TestCase):
         still = key({2: [entry(0, pos=SHOULDER)]}, name='still.key')
         poses = testPoses([still, swing], step=1.0)
         self.assertEqual([label for label, _ in poses], ['still.key@0', 'still.key@1', 'swing.key@0', 'swing.key@1'])
+        self.assertEqual([label for label, _ in testPoses([still], step=1.0, toEnd=True)],
+                         ['still.key@0', 'still.key@1', 'still.key@2'])
         report = auditSegmentation(model, poses=poses)
         self.assertEqual(report['poses'], 4)
         for finding in report['findings']:
@@ -389,6 +500,57 @@ class AuditTests(unittest.TestCase):
         raised = auditSegmentation(model, poses=poses, leverHigh=1.0, separationHigh=0.05)
         self.assertEqual(raised['severity_counts']['high'], 2)
         self.assertEqual(auditSegmentation(model, leverHigh=1.0, separationHigh=0.05)['severity_counts']['high'], 0)
+
+    def test_a_child_piece_left_in_its_parent_is_an_ancestor_overlap(self):
+        # Eight faces of the arm's mesh lie inside the torso. The torso, the arm's parent, claims them:
+        # a child's end in its parent is how pieces overlap at a joint, so this is review, not high.
+        # The lever is the distance from the shoulder to the lowest face centre, (0, 0, 0.0025).
+        model, added = character(inner=True)
+        report = auditSegmentation(model)
+        self.assertEqual(report['severity_counts']['high'], 0)
+        piece, = [f for f in report['findings'] if f['severity'] == 'review']
+        self.assertEqual((piece['code'], piece['part_name'], piece['claimed_by_name'], piece['relation'],
+                          piece['joint_name']), ('stray_island', 'k_rshouldr', 'k_torso', 'ancestor', 'k_rshouldr'))
+        self.assertEqual(piece['meshes'], [{'mesh': 2, 'name': 'arm', 'faces': added['inner']}])
+        self.assertAlmostEqual(piece['lever'], math.hypot(SHOULDER[0], SHOULDER[2] - 0.0025), places=6)
+        # Below leverHigh an ancestor's claim is only info.
+        quiet = auditSegmentation(model, leverHigh=0.07, detail='info')
+        self.assertEqual(quiet['severity_counts']['review'], 0)
+        piece, = [f for f in quiet['findings'] if f['code'] == 'stray_island']
+        self.assertEqual((piece['severity'], piece['relation']), ('info', 'ancestor'))
+
+    def test_sibling_parts_under_a_meshless_root_claim_as_other(self):
+        # The flap is nearer the hip's bone (down from the waist) than the torso's (up to the head).
+        # Hip and torso are siblings, so the relation is 'other' and the joint is the hip's. The lever
+        # runs from the waist to the lowest flap centres, (+-0.015, 0.01, -0.024).
+        model, flap = siblings()
+        report = auditSegmentation(model, detail='info')
+        found, = report['findings']
+        self.assertEqual((found['code'], found['part_name'], found['claimed_by_name'], found['relation'],
+                          found['joint_name'], found['severity']),
+                         ('foreign_surface', 'k_torso', 'k_hip', 'other', 'k_hip', 'review'))
+        self.assertEqual(found['meshes'], [{'mesh': 1, 'name': 'torso', 'faces': flap}])
+        lever = math.sqrt(0.015 ** 2 + 0.01 ** 2 + 0.024 ** 2)
+        self.assertAlmostEqual(found['lever'], lever, places=6)
+        self.assertEqual(found['facing'], 0.0)
+        self.assertEqual(auditSegmentation(model, leverHigh=0.025)['status'], 'suspect')
+        low = auditSegmentation(model, leverReview=0.05, detail='info')
+        self.assertEqual((low['status'], low['findings'][0]['severity']), ('clean', 'info'))
+
+    def test_large_islands_and_short_levers_are_info(self):
+        model, added = character(strip=True, shard=True)
+        # With islandShare 0 every island counts as large: the shard is info, not high.
+        large = auditSegmentation(model, islandShare=0.0, detail='info')
+        island, = [f for f in large['findings'] if f['code'] == 'stray_island']
+        self.assertEqual((island['severity'], island['relation']), ('info', 'descendant'))
+        self.assertGreater(island['share'], 0.0)
+        # Below leverReview a region the arm (a descendant) claims is info too.
+        short = auditSegmentation(model, leverHigh=1.0, leverReview=0.9, detail='info')
+        self.assertEqual(short['status'], 'clean')
+        strip, = [f for f in short['findings'] if f['code'] == 'foreign_surface']
+        self.assertEqual((strip['severity'], strip['relation'], strip['claimed_by_name']),
+                         ('info', 'descendant', 'k_rshouldr'))
+        self.assertLess(strip['lever'], 0.9)
 
     def test_findings_are_bounded_and_counted(self):
         model, added = character(shards=40)
@@ -454,8 +616,9 @@ class RemoveFacesTests(unittest.TestCase):
         self.assertEqual((report['faces_before'], report['faces_removed'], report['cap_faces']), (96, 4, 6))
         self.assertEqual((report['open_edges_before'], report['open_edges_after']), (0, 0))
         self.assertEqual(report['unclosed'], [])
+        self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (0, 0))
         opening, = report['openings']
-        self.assertEqual((len(opening['vertices']), opening['material'], opening['shared_edges']), (8, 3, 0))
+        self.assertEqual((len(opening['vertices']), opening['material']), (8, 3))
         self.assertAlmostEqual(opening['planarity'], 0.0)
         mesh = fixed.geosets[0].meshes[0]
         self.assertEqual(len(mesh.faces), 98)
@@ -480,6 +643,97 @@ class RemoveFacesTests(unittest.TestCase):
         fixed, report = removeFaces(model, 0, self.patch(model), closeOpenings=False)
         self.assertEqual((report['cap_faces'], report['open_edges_after']), (0, 8))
         self.assertEqual(len(fixed.geosets[0].meshes[0].faces), 92)
+
+    def cells(self, model, *cells):
+        """Faces of the +x side's cells (i, j): y from 0.01 i and z from 0.01 j."""
+        mesh = model.geosets[0].meshes[0]
+        out = []
+        for fi, face in enumerate(mesh.faces):
+            pts = np.array([tuple(mesh.vertices[v]) for v in face.vertexIdxs])
+            if np.allclose(pts[:, 0], 0.04) and (round(pts[:, 1].min() / 0.01), round(pts[:, 2].min() / 0.01)) in cells:
+                out.append(fi)
+        return out
+
+    def test_caps_never_turn_a_kept_tooth_inside_out(self):
+        # The opening wraps round a kept face whose tip stands out of the plane. The cap of least area
+        # would be that face turned inside out (as two caps were on Mandalorian Red's flank); a triangle
+        # tooth needs the edge rule, a quad tooth the corner rule as well.
+        for quad in (False, True):
+            with self.subTest(quad=quad):
+                builder, kept, removed = tooth(quad)
+                model = one_mesh(builder)
+                fixed, report = removeFaces(model, 0, removed)
+                mesh = fixed.geosets[0].meshes[0]
+                corners = set(model.geosets[0].meshes[0].faces[kept].vertexIdxs)
+                opening, = report['openings']
+                loop = opening['vertices']
+                self.assertEqual(len(loop), 8 if quad else 7)
+                self.assertEqual(len(opening['cap_faces']), len(loop) - 2)
+                self.assertEqual(report['unclosed'], [])
+                for cap in opening['cap_faces']:
+                    self.assertFalse(set(mesh.faces[cap].vertexIdxs) <= corners)
+                # Only the ring's outer border stays open, and no edge is used twice the same way.
+                self.assertEqual((report['open_edges_before'], report['open_edges_after']), (6, 6))
+                self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (0, 0))
+                # Without the rules the cheapest cap does cover the tooth: the case is a real one.
+                points = np.array([tuple(mesh.vertices[v]) for v in loop])
+                self.assertTrue(any({loop[i] for i in t} <= corners for t in triangulatePolygon(points)))
+
+    def test_openings_that_touch_at_a_point_are_capped_apart(self):
+        # Two cells that share only a corner: a figure eight through that point, walked as two loops.
+        for pair in (((1, 2), (2, 1)), ((0, 0), (1, 1))):
+            with self.subTest(cells=pair):
+                model = self.closed_box()
+                fixed, report = removeFaces(model, 0, self.cells(model, *pair))
+                self.assertEqual([len(o['vertices']) for o in report['openings']], [4, 4])
+                self.assertEqual((report['cap_faces'], report['unclosed']), (4, []))
+                self.assertEqual((report['open_edges_after'], report['repeated_edges_after']), (0, 0))
+                mesh = fixed.geosets[0].meshes[0]
+                for (a, b), faces in edges(mesh).items():
+                    self.assertEqual(len(faces), 1)
+                    self.assertIn((b, a), edges(mesh))
+                for cap in mesh.faces[94:]:
+                    self.assertEqual(len(set(cap.vertexIdxs)), 3)
+                    self.assertAlmostEqual(face_area(mesh, cap), 0.5e-4)
+
+    def test_an_open_chain_is_listed_once(self):
+        # A 4 x 4 sheet with an open border: a notch of two cells at its edge leaves one chain, no loop.
+        builder = MeshBuilder()
+        for i in range(4):
+            for j in range(4):
+                builder.face([(0.01 * i, 0.01 * j, 0.0), (0.01 * (i + 1), 0.01 * j, 0.0),
+                              (0.01 * (i + 1), 0.01 * (j + 1), 0.0), (0.01 * i, 0.01 * (j + 1), 0.0)])
+        model = one_mesh(builder)
+        notch = [4, 8]                                            # cells (1, 0) and (2, 0)
+        fixed, report = removeFaces(model, 0, notch)
+        self.assertEqual((report['cap_faces'], report['openings']), (0, []))
+        self.assertEqual((report['open_edges_before'], report['open_edges_after']), (16, 18))
+        chain, = report['unclosed']
+        self.assertEqual((chain['points'], chain['reason']), (5, 'the edges do not close into a loop'))
+        mesh = model.geosets[0].meshes[0]
+        self.assertEqual([tuple(round(x * 100) for x in tuple(mesh.vertices[v])[:2]) for v in chain['vertices']],
+                         [(3, 0), (3, 1), (2, 1), (1, 1), (1, 0)])
+
+    def test_a_loop_no_cap_can_close_is_left_open(self):
+        # Three faces of a tetrahedron removed: the only cap is the fourth face turned inside out.
+        builder = MeshBuilder()
+        faces = builder.tetra((0.0, 0.0, 0.0), 0.01)
+        model = one_mesh(builder)
+        fixed, report = removeFaces(model, 0, faces[1:])
+        self.assertEqual((report['cap_faces'], report['openings'], report['faces_after']), (0, [], 1))
+        loop, = report['unclosed']
+        self.assertEqual(loop['points'], 3)
+        self.assertEqual(sorted(loop['vertices']), sorted(model.geosets[0].meshes[0].faces[faces[0]].vertexIdxs))
+        self.assertEqual(loop['reason'], 'every cap would reuse an edge or the corners of a face the mesh has')
+        self.assertEqual((report['open_edges_after'], report['repeated_edges_after']), (3, 0))
+
+    def test_repeated_edges_are_counted(self):
+        model = self.closed_box()
+        mesh = model.geosets[0].meshes[0]
+        mesh.faces.append(copy.deepcopy(mesh.faces[0]))           # a face stored twice
+        fixed, report = removeFaces(model, 0, self.patch(model))
+        self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (4, 4))
+        self.assertEqual(report['cap_faces'], 6)
 
     def test_metadata_and_blender_links(self):
         model = self.closed_box()

@@ -327,10 +327,22 @@ def restPose(model, *, geoset: int = 0, vertices: bool = True) -> Pose:
     return poseModel(model, (), geoset=geoset, vertices=vertices)
 
 
-def keyFrameTimes(key, step: float = 1.0) -> List[float]:
-    """Sample times ``0, step, 2*step ...`` below the KEY's frame count (at least time 0)."""
-    if step <= 0:
-        raise ValueError('step must be positive')
-    total = max(int(getattr(key, 'numFrames', 0)), 1)
-    count = int(math.floor((total - 1) / step + 1e-9)) + 1
+def keyFrameTimes(key, step: float = 1.0, *, toEnd: bool = False) -> List[float]:
+    """Sample times ``0, step, 2*step ...`` of a KEY played alone. Time 0 is always included.
+
+    By default the times stop at ``FRAMES - 1``, as Red's joint sweep sampled. The engine also
+    plays the last interval: a looping KEY shows every time below ``FRAMES`` before it wraps, and a
+    KEY that holds or fades at its end stops at ``FRAMES`` (``rdPuppet_AdvanceTrack`` in OpenJKDF2
+    ``Engine/rdPuppet.c``). With ``toEnd`` the times are every ``k * step`` below ``FRAMES``, then
+    ``FRAMES`` itself. ``step`` must be a positive finite number of frames.
+    """
+    if not (math.isfinite(step) and step > 0):
+        raise ValueError('step must be a positive finite number')
+    step = float(step)
+    frames = int(getattr(key, 'numFrames', 0))
+    if toEnd:
+        end = max(frames, 0)
+        count = max(1, int(math.ceil(end / step - 1e-9))) if end else 0
+        return [round(k * step, 9) for k in range(count)] + [float(end)]
+    count = int(math.floor((max(frames, 1) - 1) / step + 1e-9)) + 1
     return [round(k * step, 9) for k in range(count)]

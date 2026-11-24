@@ -75,7 +75,7 @@ A count is a lead, not a verdict. Look at each flagged pose, face or KEY before 
 or a KEY. On Mandalorian Red, knee counts in the hundreds were lines of sight into the crease of a
 bent knee: open air, not a hole. One or two lines in a pose are usually a sliver at a rim; dozens
 are an opening you can see. Compare before and after only on the same sample points: the same
-KEYs, step, cameras and reference pose.
+KEYs, step, `toEnd`, cameras and reference pose.
 
 ## The reference pose
 
@@ -86,8 +86,9 @@ were cut. A wrong reference gives plausible counts and no warning.
   as Mandalorian Red.
 - Characters cut with every joint straight at a stand KEY's seats, such as Darth Lilitari,
   Lilivane and Biddy Blas, need that stand KEY with zero rotations:
-  `referencePose(model, stand, 0, zeroRotations=True)`, or `zeroRotationPose(model, stand=stand)`
-  for the cut lint. Use the stand KEY the character was cut against. The MCP tools take
+  `referencePose(model, stand, 0, zeroRotations=True)`, or `zeroRotationPose(model, stand=stand)`,
+  which builds the same pose; either works for both audits. Use the stand KEY the character was
+  cut against. The MCP tools take
   `reference_key` with `zero_rotations: true`. In **Audit Files**, choose **Reference KEY** with
   **Zero Rotations**.
 
@@ -97,6 +98,13 @@ were cut. A wrong reference gives plausible counts and no warning.
   docstring names the engine functions it follows. No audit runs the game.
 - Poses are sampled one at a time. Puppet timing, fades, looping, physics and the player's aim are
   not run.
+- A KEY played alone is sampled at `0, step, 2*step ...` up to `FRAMES - 1` at most
+  (`keyFrameTimes`), as Red's sweep was. The engine also plays the last interval, up to `FRAMES`:
+  a looping KEY shows every time below `FRAMES`, and a KEY that holds or fades at its end stops at
+  `FRAMES`. The joint-gap audit, the seat offsets, the cut lint's `testPoses` and the floor and
+  camera audits take `toEnd=True` to sample it too; the MCP tools and the panel use the default.
+  The KEY lint's pop scan already samples up to `FRAMES`.
+- `step` must be a positive finite number of frames.
 - Thresholds are JK units chosen for Kyle-sized characters, from a few released characters. Scale
   them for other sizes.
 - The audits are geometric checks of native files. A person, or a test in the game, still has to

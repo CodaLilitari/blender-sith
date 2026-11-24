@@ -214,8 +214,8 @@ class PopLimits:
     formJump: float = 90.0
 
     def __post_init__(self):
-        if not self.step > 0 or not self.window > 0 or self.guard < 0:
-            raise ValueError('Pop scan step and window must be positive and guard nonnegative')
+        if not (math.isfinite(self.step) and self.step > 0) or not self.window > 0 or self.guard < 0:
+            raise ValueError('Pop scan step must be a positive finite number, window positive and guard nonnegative')
 
 
 def _increasing(entries) -> bool:

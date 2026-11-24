@@ -153,6 +153,12 @@ def zeroRotationPose(model, *, stand=None, frame: float = 0.0, nodes: Optional[I
     nodes ``stand`` drives, else the nodes named like Kyle's skeleton, else every node) get zero
     rotation, and the position ``stand`` gives them at ``frame`` where it has a track. Every other node
     keeps its rest position and rotation.
+
+    With ``stand`` and the default ``nodes`` this is the reference the joint-gap audit builds with
+    ``sith.audit.articulation.referencePose(model, stand, frame, zeroRotations=True)``: the same joint
+    frames, mesh frames and vertices. That one also records the nodes the KEY drives in
+    ``local.restWeight`` and ``local.drivenBy`` and describes itself; this one also works without a
+    KEY, or for chosen ``nodes``.
     """
     count = len(model.meshHierarchy)
     if nodes is None:
@@ -431,16 +437,18 @@ def _referenceFrames(model, reference):
 
 
 # ----------------------------------------------------------------------------------------- test poses
-def testPoses(keys: Iterable, *, step: float = 2.0, priority: int = 1, base: Sequence[PoseLayer] = ()):
+def testPoses(keys: Iterable, *, step: float = 2.0, priority: int = 1, base: Sequence[PoseLayer] = (),
+              toEnd: bool = False):
     """Test poses for ``auditSegmentation``: each KEY on its own at every ``step`` frames.
 
     Returns ``(label, layers)`` pairs labelled ``name@frame``. ``base`` layers (for example a standing
-    KEY at a lower priority) play under each KEY, as the engine fills nodes a KEY leaves alone.
+    KEY at a lower priority) play under each KEY, as the engine fills nodes a KEY leaves alone. The
+    frames stop at ``FRAMES - 1``; with ``toEnd`` they run to ``FRAMES`` itself (``keyFrameTimes``).
     """
     poses = []
     for key in keys:
         name = getattr(key, 'name', 'key')
-        for frame in keyFrameTimes(key, step):
+        for frame in keyFrameTimes(key, step, toEnd=toEnd):
             poses.append((f'{name}@{frame:g}', list(base) + [PoseLayer(key, frame, lowPri=priority)]))
     return poses
 

@@ -31,13 +31,14 @@ Kyle's meshes overlap generously, so his KEYs can do this unseen; close-fitting 
 seat.
 
 Limits. A pose is a static evaluation of one KEY (or of given layers) at one time: no puppet
-timing, looping, fades or aim pitch. Every polygon counts as cover whichever way it
-faces, although the engine skips single-sided faces seen from behind (``rdModel3_DrawMesh``), so
-an opening seen into an open shell can be missed. The sweep finds gaps, not one part pushing
-through another, and not dark polygons that read as holes. Anchor placement is a heuristic with
-lengths tuned for Kyle-scale characters (``AnchorSettings``). Lines are tested exactly, where
-Red's sweep sampled them at the centres of 360-pixel renders, so borderline counts differ a
-little from his.
+timing, looping, fades or aim pitch. By default a KEY is sampled up to ``FRAMES - 1``, as Red's
+sweep was, so the last interval up to ``FRAMES`` is not; ``toEnd`` samples it too. Every polygon
+counts as cover whichever way it faces, although the engine skips single-sided faces seen from
+behind (``rdModel3_DrawMesh``), so an opening seen into an open shell can be missed. The sweep
+finds gaps, not one part pushing through another, and not dark polygons that read as holes.
+Anchor placement is a heuristic with lengths tuned for Kyle-scale characters
+(``AnchorSettings``). Lines are tested exactly, where Red's sweep sampled them at the centres of
+360-pixel renders, so borderline counts differ a little from his.
 """
 
 from dataclasses import asdict, dataclass, field, replace
@@ -206,7 +207,9 @@ def referencePose(model, key=None, frame: float = 0.0, *, zeroRotations: bool = 
     position at ``frame`` and its rotation, or zero rotation with ``zeroRotations``; every other
     node keeps its rest position and rotation. Red's builds of Kyle-skeleton characters are cut
     with the standing KEY's seats and zero rotation, which is the reference his sweep used:
-    ``referencePose(model, standKey, 0, zeroRotations=True)``.
+    ``referencePose(model, standKey, 0, zeroRotations=True)``. The cut lint's
+    ``sith.audit.segmentation.zeroRotationPose(model, stand=standKey, frame=0)`` builds the same
+    joint frames, mesh frames and vertices; either can be passed to either audit.
     """
     if key is None:
         if zeroRotations:
@@ -245,8 +248,8 @@ class _Source:
     def keys(self):
         return [layer.key for layer in self.layers]
 
-    def times(self, step: float) -> List[float]:
-        return keyFrameTimes(self.layers[0].key, step)
+    def times(self, step: float, toEnd: bool = False) -> List[float]:
+        return keyFrameTimes(self.layers[0].key, step, toEnd=toEnd)
 
     def at(self, time: float) -> List[PoseLayer]:
         return [replace(layer, frame=float(layer.frame) + time) for layer in self.layers]
@@ -791,12 +794,15 @@ def _nodeRef(model, i) -> dict:
 def auditArticulation(model, keys, *, step: float = 2.0, cameras=None, joints=None,
                       reference: Optional[Pose] = None, settings: Optional[AnchorSettings] = None,
                       geoset: int = 0, worst: int = 6,
-                      onPose: Optional[Callable[[str, float, List[dict]], None]] = None) -> dict:
+                      onPose: Optional[Callable[[str, float, List[dict]], None]] = None,
+                      toEnd: bool = False) -> dict:
     """Seam-ray sweep: daylight through each joint, in every sampled pose of every KEY.
 
     ``keys`` are KEYs (a sequence or a name -> KEY mapping) played alone at full weight, or
     sequences of ``PoseLayer`` played together; layers keep their own frame offsets and priorities
-    and the first layer's KEY sets the sample times. Each KEY is sampled every ``step`` frames.
+    and the first layer's KEY sets the sample times. Each KEY is sampled every ``step`` frames up
+    to ``FRAMES - 1``, as Red's sweep did; with ``toEnd`` the last interval is sampled too, up to
+    ``FRAMES`` itself (``keyFrameTimes``).
     ``cameras`` are (azimuth, elevation) degrees (default ``SWEEP_CAMERAS``). ``reference`` is the
     pose the parts were cut in (default: rest pose; see ``referencePose``). ``joints`` replaces the
     derived joints (see ``articulationJoints``). ``onPose(name, frame, joints)`` receives every
@@ -809,7 +815,7 @@ def auditArticulation(model, keys, *, step: float = 2.0, cameras=None, joints=No
         raise ValueError('Give at least one KEY to audit')
     if worst < 0:
         raise ValueError('worst must not be negative')
-    timeLists = [source.times(step) for source in sources]
+    timeLists = [source.times(step, toEnd) for source in sources]
     settings = settings or AnchorSettings()
     cams = _cameraList(cameras)
     directions = [cameraDirection(az, el) for az, el in cams]
@@ -909,7 +915,7 @@ def auditArticulation(model, keys, *, step: float = 2.0, cameras=None, joints=No
         'keys': keyRows,
         'geometry': {'geoset': geoset, 'triangles': int(len(geometry.tris)),
                      'skipped_faces': geometry.skippedFaces},
-        'parameters': {'step': float(step), 'cameras': [list(cam) for cam in cams],
+        'parameters': {'step': float(step), 'toEnd': bool(toEnd), 'cameras': [list(cam) for cam in cams],
                        'reference': getattr(reference, 'description', 'given pose'),
                        'worst': worst, 'settings': {k: (list(v) if isinstance(v, tuple) else v)
                                                     for k, v in asdict(settings).items()}},
@@ -920,14 +926,16 @@ def auditArticulation(model, keys, *, step: float = 2.0, cameras=None, joints=No
 
 # ----------------------------------------------------------------------------- seat offsets
 
-def seatOffsets(model, keys, *, reference: Optional[Pose] = None, tolerance: float = 2e-5) -> dict:
+def seatOffsets(model, keys, *, reference: Optional[Pose] = None, tolerance: float = 2e-5,
+                toEnd: bool = False) -> dict:
     """The largest translation each KEY gives each node away from its seat, with its frame.
 
     A seat is the node's position in ``reference`` (default: the model's rest positions; pass
     ``referencePose(model, standKey)`` to measure from the standing KEY). The offset is the KEY's
     track position minus the seat, in the parent's frame, at every whole frame and every entry
-    frame below ``FRAMES``. Offsets above ``tolerance`` count as off the seat. This is the usual
-    cause of an opening joint: read it next to ``auditArticulation``'s ``seat_nodes``.
+    frame below ``FRAMES``; with ``toEnd``, at ``FRAMES`` too, the end of the last interval the
+    engine plays (see ``keyFrameTimes``). Offsets above ``tolerance`` count as off the seat. This
+    is the usual cause of an opening joint: read it next to ``auditArticulation``'s ``seat_nodes``.
     """
     if not (math.isfinite(tolerance) and tolerance >= 0):
         raise ValueError('tolerance must be a non-negative number')
@@ -946,15 +954,19 @@ def seatOffsets(model, keys, *, reference: Optional[Pose] = None, tolerance: flo
     perNode: Dict[int, dict] = {}
     keyRows, offSeat = [], []
     for name, key in distinct:
-        total = max(int(getattr(key, 'numFrames', 0)), 1)
+        frames = int(getattr(key, 'numFrames', 0))
+        total = max(frames, 1)
         row = {'name': name, 'tracks': 0, 'off_seat': []}
         for i in range(len(nodes)):
             track = keyTrack(key, i)
             if track is None:
                 continue
             row['tracks'] += 1
-            times = sorted(set(float(f) for f in range(total)) |
-                           {float(e.frame) for e in track.keyframes if 0 <= float(e.frame) < total})
+            times = set(float(f) for f in range(total)) | {float(e.frame) for e in track.keyframes
+                                                            if 0 <= float(e.frame) < total}
+            if toEnd:
+                times.add(float(max(frames, 0)))
+            times = sorted(times)
             best = None
             for time in times:
                 vector = sampleTrack(track, time)[0] - seats[i]
@@ -988,5 +1000,5 @@ def seatOffsets(model, keys, *, reference: Optional[Pose] = None, tolerance: flo
         'keys': keyRows,
         'parameters': {'reference': ('rest positions' if reference is None else
                                      getattr(reference, 'description', 'given pose')),
-                       'tolerance': tolerance},
+                       'tolerance': tolerance, 'toEnd': bool(toEnd)},
     }

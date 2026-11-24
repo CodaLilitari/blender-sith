@@ -209,6 +209,26 @@ class SequenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             keySequence(k, direction=(0, 1, 0))
 
+    def test_the_last_interval_is_sampled_on_request(self):
+        k = foot((0, FOOT), frames=3)
+        self.assertEqual([s.time for s in keySequence(k, 0.5).samples], [0, 0.5, 1.0, 1.5, 2.0])
+        ends = keySequence(k, 0.5, toEnd=True)
+        self.assertEqual([s.time for s in ends.samples], [0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0])
+        self.assertEqual(ends.samples[-1].layers[0].frame, 3.0)
+        # The foot sinks from frame 5 on and is 0.005 under the floor only at FRAMES (6).
+        sink = key({1: [entry(0, FOOT), entry(5, FOOT, dpos=(0.0, 0.0, -0.005), flags=KeyframeFlag.PositionChange)]})
+        model = leg()
+        default = auditFloorContact(model, [sink])
+        self.assertEqual((default['status'], default['to_end'], default['samples']), ('clear', False, 6))
+        report = auditFloorContact(model, [sink], toEnd=True)
+        self.assertEqual((report['status'], report['to_end'], report['samples']), ('review', True, 7))
+        found = report['findings'][0]
+        self.assertEqual((found['code'], found['time']), ('below_floor', 6.0))
+        self.assertAlmostEqual(found['depth'], 0.005)
+        self.assertEqual([row['time'] for row in lowestPoints(model, sink, toEnd=True)], [0, 1, 2, 3, 4, 5, 6])
+        camera = auditCameraReading(model, [sink], nodes=['k_lfoot'], toEnd=True)
+        self.assertEqual(camera['sequences'][0]['samples'], 7)
+
     def test_sample_times_must_increase(self):
         k = foot((0, FOOT))
         with self.assertRaises(ValueError):
