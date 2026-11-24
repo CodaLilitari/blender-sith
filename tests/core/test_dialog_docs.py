@@ -11,6 +11,16 @@ from sith.material.matWriter import kMatEncodings
 
 ROOT = Path(__file__).resolve().parents[2]
 
+# Each Sith Audits operator with options has its own USAGE subsection, so a row missing from one
+# operator's table cannot be satisfied by another operator's row with the same label. Restore
+# Colours has no options and shares the Colour Pieces subsection.
+AUDIT_SECTIONS = {
+    'CheckRetailLimits': ('Check Retail Limits', 'Colour Pieces and Restore Colours'),
+    'ColourPieces': ('Colour Pieces and Restore Colours', 'Audit Files'),
+    'AuditFiles': ('Audit Files', 'Reseat KEYs'),
+    'ReseatKeys': ('Reseat KEYs', 'Troubleshooting'),
+}
+
 
 def keyword(call, name):
     return next((item.value for item in call.keywords if item.arg == name), None)
@@ -34,10 +44,7 @@ class DialogDocumentationTests(unittest.TestCase):
             'ExportKey': ('Exporting KEY Animations', 'Importing MAT Textures'),
             'ImportMat': ('Importing MAT Textures', 'Exporting MAT Textures'),
             'ExportMat': ('Exporting MAT Textures', 'Editing 3DO Properties'),
-            'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
-            'ColourPieces': ('Auditing Models', 'Troubleshooting'),
-            'AuditFiles': ('Auditing Models', 'Troubleshooting'),
-            'ReseatKeys': ('Auditing Models', 'Troubleshooting'),
+            **AUDIT_SECTIONS,
         }
         for name, bounds in sections.items():
             section = self.section(*bounds)
@@ -52,7 +59,9 @@ class DialogDocumentationTests(unittest.TestCase):
                 label = keyword(call, 'name')
                 self.assertIsInstance(label, ast.Constant, f'{name}: property needs a display name')
                 with self.subTest(operator=name, property=member.target.id):
-                    self.assertIn(f'**{label.value}**'.casefold(), section)
+                    # A table row that starts with the label, not a mention in the prose around it.
+                    row = r'^\|\s*\*\*' + re.escape(label.value.casefold()) + r'\*\*'
+                    self.assertRegex(section, re.compile(row, re.MULTILINE), f'{name}: no row for {label.value}')
                 checked += 1
             self.assertGreater(checked, 0, name)
 
@@ -91,9 +100,7 @@ class DialogDocumentationTests(unittest.TestCase):
             'ImportModel3do': ('Importing 3DO Models', 'Exporting 3DO Models'),
             'ExportModel3do': ('Exporting 3DO Models', 'Importing KEY Animations'),
             'ImportKey': ('Importing KEY Animations', 'Exporting KEY Animations'),
-            'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
-            'AuditFiles': ('Auditing Models', 'Troubleshooting'),
-            'ReseatKeys': ('Auditing Models', 'Troubleshooting'),
+            **AUDIT_SECTIONS,
         }
         for name, bounds in sections.items():
             for member in self.classes[name].body:
