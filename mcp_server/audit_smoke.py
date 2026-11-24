@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Exercise the six audit tools through the official stdio client, with synthetic inputs only."""
+"""Exercise the audit tools and reseat_keys through the official stdio client, with synthetic inputs only."""
 import argparse
 import asyncio
 import hashlib
@@ -55,6 +55,18 @@ def lift(height):
     return key_text([(0, [(0, (0, 0, 0))]), (1, [(0, (0, 0, 0)), (2, (0, 0, height))])])
 
 
+# Kyle's layout, which reseat_keys needs: (name, parent).
+KYLE = [("$$$dummy", -1), ("$$$dummy", 0), ("k_hip", 0), ("k_torso", 1), ("k_lthigh", 2), ("k_rthigh", 2),
+        ("k_lshouldr", 3), ("k_lforearm", 6), ("k_lhand", 7), ("k_rshouldr", 3), ("k_rforearm", 9), ("k_rhand", 10),
+        ("k_neck", 3), ("k_head", 12)]
+
+
+def kyle_key(drop, frames):
+    """Kyle's joints on their seats, except that the hip sits ``drop`` low and the thighs push up into it by as much."""
+    return key_text([(i, [(0, (0, 0, -drop if i == 2 else drop if i in (4, 5) else 0))]) for i in range(len(KYLE))],
+                    joints=len(KYLE), frames=frames)
+
+
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -81,6 +93,13 @@ async def check(config_path, evidence):
     for name, text in files.items():
         (keys / name).write_text(text, encoding="utf-8")
     (other / "lift.key").write_text(lift(0.002), encoding="utf-8")
+    kyle, kyle_keys = inputs / "kyle.3do", inputs / "kyle_key"
+    kyle_keys.mkdir()
+    kyle.write_text(model_text([("lower", *box((-R, -D, -H), (R, D, O)))],
+                               [(name, parent, 0 if i == 0 else -1) for i, (name, parent) in enumerate(KYLE)]),
+                    encoding="utf-8")
+    (kyle_keys / "kystand1.key").write_text(kyle_key(0.0, 1), encoding="utf-8")
+    (kyle_keys / "saber.key").write_text(kyle_key(0.004, 4), encoding="utf-8")
     # This disposable config authorizes only the synthetic inputs created here.
     config.update(read_roots=[str(inputs)], job_root=str(evidence / "jobs"))
     scoped = evidence / "config.json"
@@ -103,12 +122,14 @@ async def check(config_path, evidence):
             {"name": "First", "model_path": str(model), "key_dir": str(keys), "keys": ["lift.key"]},
             {"name": "Second", "model_path": str(model), "key_dir": str(other)}], "custom": 0},
          {"track_slots": "incompatible"}),
+        ("reseat", "reseat_keys", {"model_path": str(kyle), "key_dir": str(kyle_keys),
+                                   "stand_key": str(kyle_keys / "kystand1.key")}, {"reseat": "reseated"}),
     ]
     summary, failures = {}, []
     async with Client(params) as client:
         tools = {tool.name for tool in (await client.list_tools()).tools}
         missing = {"audit_budget", "audit_segmentation", "audit_articulation", "audit_ground", "lint_keys",
-                   "audit_track_slots"} - tools
+                   "audit_track_slots", "reseat_keys"} - tools
         if missing:
             raise AssertionError(f"Missing audit tools: {sorted(missing)}")
         for label, tool, arguments, expected in cases:
@@ -120,19 +141,26 @@ async def check(config_path, evidence):
                 continue
             audit = data["audit"]
             statuses = {section: audit[section]["status"] for section in expected}
+            listing = data["inputs"].get("keys", {})
+            # Only reseat_keys writes files: the changed KEY, in its job's reseated folder.
+            outputs = data.get("outputs", [])
             if (any(want is not None and statuses[section] != want for section, want in expected.items())
                     or not data["source_unchanged"]
                     or sha256(data["report"]["path"]) != data["report"]["sha256"]
-                    or any(item["sha256"] != sha256(keys / item["name"])
-                           for item in data["inputs"].get("keys", {}).get("files", []))
-                    or ("model" in data["inputs"] and data["inputs"]["model"]["sha256"] != sha256(data["inputs"]["model"]["source"]))):
+                    or any(item["sha256"] != sha256(Path(listing["folder"]) / item["name"])
+                           for item in listing.get("files", []))
+                    or ("model" in data["inputs"] and data["inputs"]["model"]["sha256"] != sha256(data["inputs"]["model"]["source"]))
+                    or [item["name"] for item in outputs] != (["saber.key"] if tool == "reseat_keys" else [])
+                    or any(Path(item["path"]).parent != Path(data["job_directory"]) / "reseated"
+                           or sha256(item["path"]) != item["sha256"] for item in outputs)):
                 failures.append(f"{label}: unexpected result {statuses}")
-            summary[label] = {"statuses": statuses, "job": data["job_id"]}
+            summary[label] = {"statuses": statuses, "job": data["job_id"], "outputs": [item["name"] for item in outputs]}
         denials = {
             "outside_key_folder": ("lint_keys", {"key_dir": str(evidence)}),
             "reference_without_rotation_rule": ("audit_articulation", {"model_path": str(model), "key_dir": str(keys),
                                                                        "reference_key": stand}),
             "path_in_key_subset": ("lint_keys", {"key_dir": str(inputs), "keys": ["key/lift.key"]}),
+            "reseat_without_seats": ("reseat_keys", {"model_path": str(kyle), "key_dir": str(kyle_keys)}),
         }
         for label, (tool, arguments) in denials.items():
             denied = await client.call_tool(tool, arguments)

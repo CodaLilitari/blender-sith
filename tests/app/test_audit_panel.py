@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The Sith Audits panel in real Blender: retail limits, piece colours and file audits."""
+"""The Sith Audits panel in real Blender: retail limits, piece colours, file audits and KEY reseating."""
 import hashlib
 import json
 from pathlib import Path
@@ -13,6 +13,7 @@ from app.support import SceneTestCase
 from sith import app
 from sith.audit.budget import auditBudget
 from sith.audit.segmentation import pieceColours
+from sith.key import keyReseat
 from sith.key.key import Key, Keyframe, KeyframeFlag, KeyNode
 from sith.key.keyWriter import saveKey
 from sith.model import model3doWriter
@@ -51,6 +52,45 @@ def key(name, tracks, joints=2, frames=10):
         node.idx, node.meshName, node.keyframes = index, f'n{index}', entries
         k.nodes.append(node)
     return k
+
+
+# Kyle's layout, which Reseat KEYs needs: (name, parent, rest position). The hip and the torso's
+# carrier hang from the root, the torso from the carrier, the thighs from the hip.
+KYLE = (('$$$dummy', -1, (0.0, 0.0, 0.0)), ('$$$dummy', 0, (0.0, 0.0, 0.01)), ('k_hip', 0, (0.0, 0.0, -0.01)),
+        ('k_torso', 1, (0.0, 0.0, 0.006)), ('k_lthigh', 2, (-0.008, 0.0, -0.001)),
+        ('k_rthigh', 2, (0.008, 0.0, -0.001)), ('k_lshouldr', 3, (-0.02, 0.0, 0.036)),
+        ('k_lforearm', 6, (-0.011, 0.0, -0.033)), ('k_lhand', 7, (-0.002, 0.0, -0.028)),
+        ('k_rshouldr', 3, (0.02, 0.0, 0.036)), ('k_rforearm', 9, (0.011, 0.0, -0.033)),
+        ('k_rhand', 10, (0.002, 0.0, -0.028)), ('k_neck', 3, (0.0, 0.0, 0.044)), ('k_head', 12, (0.0, 0.0, 0.006)))
+HIP, THIGHS = 2, (4, 5)
+
+
+def kyle_3do(hip='k_hip'):
+    """Kyle's layout as hand-written 3DO 2.1 text; the root carries one box."""
+    vertices, faces = box((-R, -D, -H), (R, D, O))
+    lines = ['SECTION: HEADER', '3DO 2.1', 'SECTION: MODELRESOURCE', 'MATERIALS 0', 'SECTION: GEOMETRYDEF',
+             'RADIUS 1', 'INSERT OFFSET 0 0 0', 'GEOSETS 1', 'GEOSET 0', 'MESHES 1', 'MESH 0', 'NAME box', 'RADIUS 1',
+             'GEOMETRYMODE 4', 'LIGHTINGMODE 3', 'TEXTUREMODE 3', f'VERTICES {len(vertices)}',
+             *(f'{i}: {x!r} {y!r} {z!r} 0' for i, (x, y, z) in enumerate(vertices)),
+             'TEXTURE VERTICES 1', '0: 0 0', 'VERTEX NORMALS', *(f'{i}: 0 0 1' for i in range(len(vertices))),
+             f'FACES {len(faces)}', *(f'{i}: -1 0 4 3 3 0 4 ' + ' '.join(f'{v},0' for v in face) for i, face in enumerate(faces)),
+             'FACE NORMALS', *(f'{i}: 0 0 1' for i in range(len(faces))),
+             'SECTION: HIERARCHYDEF', f'HIERARCHY NODES {len(KYLE)}']
+    for i, (name, parent, (x, y, z)) in enumerate(KYLE):
+        children = [j for j, node in enumerate(KYLE) if node[1] == i]
+        siblings = [j for j, node in enumerate(KYLE) if node[1] == parent and j > i]
+        lines.append(f'{i}: 0x0 0x0 {0 if i == 0 else -1} {parent} {children[0] if children else -1} '
+                     f'{siblings[0] if siblings else -1} {len(children)} {x!r} {y!r} {z!r} 0 0 0 0 0 0 '
+                     f"{hip if name == 'k_hip' else name}")
+    return '\n'.join(lines) + '\n'
+
+
+def kyle_key(name, drop, frames=4):
+    """Every joint at rest, except that the hip sits ``drop`` low and both thighs push up into it by as
+    much: the fault of the stock saber KEYs."""
+    tracks = [(index, [entry(0, (x, y, z - drop if index == HIP else z + drop if index in THIGHS else z))])
+              for index, (_, _, (x, y, z)) in enumerate(KYLE)]
+    return key(name, tracks, joints=len(KYLE), frames=frames)
 
 
 def digest(path):
@@ -118,7 +158,7 @@ class AuditPanelTests(SceneTestCase):
 
     def run_operator(self, cls, context=None, **values):
         operator = SimpleNamespace(report=self.report, **values)
-        for name in ('_audit',):
+        for name in ('_audit', '_reseat'):
             if hasattr(cls, name):
                 setattr(operator, name, MethodType(getattr(cls, name), operator))
         return cls.execute(operator, context or bpy.context)
@@ -142,7 +182,7 @@ class AuditPanelTests(SceneTestCase):
         panel = bpy.types.VIEW3D_PT_sith_audits
         self.assertEqual((panel.bl_space_type, panel.bl_region_type, panel.bl_category, panel.bl_label),
                          ('VIEW_3D', 'UI', 'Sith', 'Sith Audits'))
-        for name in ('check_retail_limits', 'colour_pieces', 'restore_colours', 'audit_files'):
+        for name in ('check_retail_limits', 'colour_pieces', 'restore_colours', 'audit_files', 'reseat_keys'):
             with self.subTest(operator=name):
                 self.assertTrue(getattr(bpy.ops.sith, name).get_rna_type().description)
         self.assertIn('can take minutes', app.AuditFiles.__doc__)
@@ -150,6 +190,18 @@ class AuditPanelTests(SceneTestCase):
         self.assertEqual((properties['step'].default, properties['reference'].default, properties['zero_rotations'].default),
                          (2.0, 'REST', True))
         self.assertIn('kystand1', properties['reference_key'].description)
+        reseat = bpy.ops.sith.reseat_keys.get_rna_type()
+        for phrase in ('only for KEYs that change', 'only into the Output Folder', 'every model in that install',
+                       'before and after on the same KEYs and step', "Kyle's hip layout only",
+                       'before adding custom tracks'):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, reseat.description)
+        properties = reseat.properties
+        self.assertEqual((properties['seats'].default, properties['stand_key'].default, properties['stand_frame'].default,
+                          properties['check_written'].default, properties['output_directory'].default),
+                         ('KEY', 'kystand1.key', 0.0, True, ''))
+        self.assertAlmostEqual(properties['waist_tuck'].default, 0.0025, places=7)
+        self.assertEqual(properties['waist_lift'].default, 0.0)
 
     # Check Retail Limits
 
@@ -329,3 +381,100 @@ class AuditPanelTests(SceneTestCase):
                 self.assertEqual(self.audit(model, **options), {'CANCELLED'})
                 self.assertEqual(self.reports[-1][0], {'ERROR'})
         self.assertFalse([t for t in bpy.data.texts if t.name.startswith('boxes.3do')])
+
+    # Reseat KEYs
+
+    def kyle_files(self, hip='k_hip'):
+        """A Kyle-named 3DO and its 'key' folder: the stand KEY, a still KEY and a saber-like KEY."""
+        model = self.folder / 'kyle.3do'
+        model.write_text(kyle_3do(hip), encoding='utf-8')
+        keys = self.folder / 'key'
+        keys.mkdir()
+        for name, drop, frames in (('kystand1.key', 0.0, 1), ('still.key', 0.0, 4), ('saber.key', 0.004, 4)):
+            saveKey(kyle_key(name, drop, frames), keys / name, 'synthetic')
+        return model, keys
+
+    def files(self):
+        return {path: digest(path) for path in self.folder.rglob('*') if path.is_file()}
+
+    def reseat(self, model, **options):
+        values = dict(filepath=str(model), key_directory='', key_files='', seats='KEY', stand_key='kystand1.key',
+                      stand_frame=0.0, waist_tuck=0.0025, waist_lift=0.0, check_written=True,
+                      output_directory=str(self.folder / 'reseated'))
+        values.update(options)
+        return self.run_operator(app.ReseatKeys, **values)
+
+    def test_reseat_keys_writes_only_the_changed_keys_into_the_output_folder(self):
+        model, keys = self.kyle_files()
+        before = self.files()
+        output = self.folder / 'reseated'
+        self.assertEqual(self.reseat(model), {'FINISHED'})
+        self.assertEqual({path: value for path, value in self.files().items() if output not in path.parents}, before)
+        self.assertEqual([path.name for path in output.iterdir()], ['saber.key'])
+        self.assertEqual(self.reports[-1][0], {'INFO'})
+        self.assertIn(f"Wrote 1 reseated KEYs to '{output}': saber.key", self.reports[-1][1])
+        report = report_json(bpy.data.texts['kyle.3do - KEY Reseat'])
+        self.assertEqual((report['status'], report['seats'], report['changed_keys'], report['unchanged_keys']),
+                         ('reseated', 'kystand1.key frame 0', ['saber.key'], 2))
+        self.assertEqual((report['per_key']['saber.key']['hip_rule'], report['per_key']['saber.key']['check']),
+                         ('applied', 'pass'))
+        # The same bytes that reseatKeyFiles writes with the dialog's defaults.
+        direct = self.folder / 'direct'
+        keyReseat.reseatKeyFiles(load3do(model)[0], sorted(keys.iterdir()), direct, standKeyPath=keys / 'kystand1.key')
+        self.assertEqual((output / 'saber.key').read_bytes(), (direct / 'saber.key').read_bytes())
+
+        # Model rest positions are an explicit choice; a second run never replaces a written KEY.
+        self.assertEqual(self.reseat(model, seats='REST', output_directory=str(self.folder / 'rest')), {'FINISHED'})
+        self.assertEqual(report_json(bpy.data.texts['kyle.3do - KEY Reseat'])['seats'], 'model rest positions')
+        written = digest(output / 'saber.key')
+        self.assertEqual(self.reseat(model, waist_lift=0.0015), {'CANCELLED'})
+        self.assertIn('never replaces a file', self.reports[-1][1])
+        self.assertEqual(digest(output / 'saber.key'), written)
+
+    def test_reseat_keys_refuses_the_key_folder_and_any_folder_where_it_could_replace_a_file(self):
+        model, keys = self.kyle_files()
+        taken = self.folder / 'taken'
+        taken.mkdir()
+        (taken / 'SABER.KEY').write_text('a KEY of the same name', encoding='utf-8')
+        (self.folder / 'notes.txt').write_text('a file, not a folder', encoding='utf-8')
+        before = self.files()
+        cases = [(dict(output_directory=str(keys)), 'is the KEY folder'),
+                 (dict(output_directory=str(keys) + '/'), 'is the KEY folder'),
+                 (dict(output_directory=str(taken / '..' / 'key')), 'is the KEY folder'),
+                 (dict(key_directory=str(keys), output_directory=str(keys)), 'is the KEY folder'),
+                 (dict(output_directory=str(taken)), 'already holds saber.key; Reseat KEYs never replaces a file'),
+                 (dict(output_directory=str(self.folder / 'notes.txt')), 'is a file'),
+                 (dict(output_directory=''), 'Choose an Output Folder'),
+                 (dict(output_directory='reseated'), 'must be an absolute path'),
+                 (dict(stand_key=''), 'Give the Stand KEY File'),
+                 (dict(stand_key='missing.key'), 'Stand KEY not found'),
+                 (dict(key_files='other.key'), "no file named 'other.key'"),
+                 (dict(filepath=str(keys / 'saber.key')), 'Select an existing .3do file')]
+        for options, message in cases:
+            with self.subTest(options=options):
+                self.reports.clear()
+                self.assertEqual(self.reseat(model, **options), {'CANCELLED'})
+                self.assertEqual(self.reports[-1][0], {'ERROR'})
+                self.assertIn(message, self.reports[-1][1])
+        self.assertEqual(self.files(), before)
+        self.assertFalse((self.folder / 'reseated').exists())
+        self.assertFalse([t for t in bpy.data.texts if t.name.endswith('KEY Reseat')])
+
+    def test_reseat_keys_needs_kyle_names_and_reports_a_failed_check_as_an_error(self):
+        model, _ = self.kyle_files(hip='pelvis')
+        self.assertEqual(self.reseat(model), {'CANCELLED'})
+        self.assertIn("0 nodes named 'k_hip'", self.reports[-1][1])
+        self.assertEqual(list((self.folder / 'reseated').iterdir()), [])
+        model.write_text(kyle_3do(), encoding='utf-8')
+        real = keyReseat.reseatKeyFiles
+
+        def failing(*args, **kwargs):
+            report = real(*args, **kwargs)
+            report['check']['failed_keys'] = ['saber.key']
+            report['status'] = 'fail'
+            return report
+
+        with mock.patch.object(keyReseat, 'reseatKeyFiles', side_effect=failing):
+            self.assertEqual(self.reseat(model), {'FINISHED'})
+        self.assertEqual(self.reports[-1][0], {'ERROR'})
+        self.assertIn('The check failed for saber.key: do not install them', self.reports[-1][1])

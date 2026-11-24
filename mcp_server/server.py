@@ -41,9 +41,10 @@ AUDIT_STATUSES = {
     "ground": {"clear", "review", "empty"},
     "lint": {"consistent", "review", "incompatible", "no_tracks"},
     "track_slots": {"consistent", "review", "incompatible"},
+    "reseat": {"fail", "review", "reseated", "unchanged"},
 }
 AUDIT_TOOLS = ["audit_budget", "audit_segmentation", "audit_articulation", "audit_ground", "lint_keys",
-               "audit_track_slots"]
+               "audit_track_slots", "reseat_keys"]
 
 
 def load_helper(name, path):
@@ -452,13 +453,46 @@ class Service:
             (job / "receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             return result
 
-    def audit_job(self, kind, parameters, sections, *, model=None, keys=None, reference=None, characters=()):
+    @staticmethod
+    def written_files(folder, claimed):
+        """Check the files a job says it wrote into ``folder`` and return the server's own record of them.
+
+        Each entry gives a file name, a size and a SHA-256. The name must be a regular file directly
+        in ``folder``, with no link on its route, and the size and digest must match. ``folder`` must
+        hold nothing else, so the list is complete. Entries carry no paths, so a long job root
+        cannot push the result past ``MAX_REPORT``.
+        """
+        folder = checked_path(str(folder), directory=True)
+        if not isinstance(claimed, list) or len(claimed) > MAX_KEY_FILES:
+            raise ValueError("Missing or oversized output list")
+        outputs = {}
+        for item in claimed:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                raise ValueError("Malformed output entry")
+            path = checked_path(str(folder / item["name"]))
+            if path.parent != folder or path.name != item["name"] or path.name in outputs:
+                raise ValueError("Output outside the job's output folder")
+            size, digest = path.stat().st_size, runner.digest(path)
+            if item.get("size") != size or item.get("sha256") != digest:
+                raise ValueError("Output record does not match the file")
+            outputs[path.name] = {"name": path.name, "path": str(path), "size": size, "sha256": digest}
+        if {entry.name for entry in folder.iterdir()} != set(outputs):
+            raise ValueError("The output folder holds files the result does not list")
+        return list(outputs.values())
+
+    def audit_job(self, kind, parameters, sections, *, model=None, keys=None, reference=None, characters=(),
+                  outputs=None):
         """Snapshot the named inputs, run one fixed audit in the configured runtime, accept a bounded result.
 
         ``model`` and ``reference`` are checked paths, ``keys`` a ``key_folder`` listing and
         ``characters`` (name, model path, listing) triples. ``sections`` maps each result section the
         audit must return to its accepted status values. The worker writes the complete report to
         ``report.json`` and the bounded summary returned here to ``result.json``.
+
+        ``outputs`` names the one folder of the job that the audit writes files into (the reseat
+        pass: ``reseated``). The result must list every file there, and ``written_files`` checks
+        them before they are returned under ``outputs``. A result of any other audit that lists
+        outputs is refused.
         """
         listings = ([keys] if keys is not None else []) + [listing for _, _, listing in characters]
         paths = [path for path in (model, reference) if path is not None] + [path for _, path, _ in characters]
@@ -515,8 +549,14 @@ class Service:
                     for section, accepted in sections.items():
                         if not isinstance(audit.get(section), dict) or audit[section].get("status") not in accepted:
                             raise ValueError("Missing audit section " + section)
+                    claimed = audit.pop("outputs", None)
+                    if outputs is None and claimed is not None:
+                        raise ValueError("This audit writes no files")
+                    written = self.written_files(job / outputs, claimed) if outputs is not None else None
                     report = checked_path(str(job / "report.json"))
                     result["audit"] = audit
+                    if written is not None:
+                        result["outputs"] = written
                     result["report"] = {"path": str(report), "sha256": runner.digest(report), "size": report.stat().st_size}
                     result["status"] = "passed" if result["source_unchanged"] else "source_changed"
                 except (ValueError, OSError):
@@ -631,6 +671,36 @@ class Service:
         return self.audit_job("track_slots", {"custom": custom}, {"track_slots": AUDIT_STATUSES["track_slots"]},
                               characters=entries)
 
+    def reseat_keys(self, model_path, key_dir, keys=None, stand_key=None, stand_frame=0.0, rest_seats=False,
+                    waist_tuck=0.0025, waist_lift=0.0, check=True):
+        """Reseat KEY snapshots in a new job; the worker writes the changed ones into its ``reseated`` folder.
+
+        The seats come from a stand KEY or, when asked for explicitly, from the model's rest
+        positions, as ``reseatKeyFiles`` requires.
+        """
+        stand_frame = number("stand_frame", stand_frame, 0, 1e6)
+        waist_tuck = number("waist_tuck", waist_tuck, 0, 0.01)
+        waist_lift = number("waist_lift", waist_lift, 0, 0.01)
+        flag("rest_seats", rest_seats)
+        flag("check", check)
+        if stand_key is None:
+            if not rest_seats:
+                raise ValueError("Give stand_key, the KEY whose positions are the seats (usually the stand KEY "
+                                 "kystand1.key at frame 0), or rest_seats=true for the model's rest positions")
+            if stand_frame != 0:
+                raise ValueError("stand_frame needs stand_key")
+            stand, seats = None, None
+        else:
+            if rest_seats:
+                raise ValueError("Give stand_key or rest_seats=true, not both")
+            stand = self.source(stand_key, ".key")
+            seats = {"name": stand.name, "frame": stand_frame}
+        model = self.source(model_path)
+        listing = self.key_folder(key_dir, keys)
+        parameters = {"stand": seats, "waist_tuck": waist_tuck, "waist_lift": waist_lift, "check": check}
+        return self.audit_job("reseat", parameters, {"reseat": AUDIT_STATUSES["reseat"]}, model=model, keys=listing,
+                              reference=stand, outputs="reseated")
+
 
 def create_server(service):
     from mcp.server import MCPServer
@@ -714,6 +784,14 @@ def create_server(service):
     def audit_track_slots(characters: list[dict[str, Any]], custom: int | str | list[int] = 18) -> dict[str, Any]:
         """Check whether several characters' KEYs can share one pack. characters lists 2 to 8 entries {name, model_path, key_dir, keys (optional subset)}. For every KEY file name two characters both ship, custom slots (default: 18 and up, past Kyle's skeleton; 'names' for slots the models name differently; or a list of slots) that both drive differently are slot_collision, and a slot one drives where the other's model has a visible node its own KEY leaves alone is slot_intrusion."""
         return invoke(service.audit_track_slots, characters, custom)
+
+    @server.tool()
+    def reseat_keys(model_path: str, key_dir: str, keys: list[str] | None = None, stand_key: str | None = None,
+                    stand_frame: float = 0.0, rest_seats: bool = False, waist_tuck: float = 0.0025,
+                    waist_lift: float = 0.0, check: bool = True) -> dict[str, Any]:
+        """Reseat the KEYs in key_dir (regular .key files; keys selects a subset) for one .3do: the hip piece and the seated joints (shoulders, forearms, hands, neck, head) go back on the seats that stock KEYs push them off. No rotation changes, and the torso and legs stay where the KEY put them. Seats come from stand_key (an allowlisted .key, usually the stand KEY kystand1.key) at stand_frame, or with rest_seats=true from the model's rest positions, only when its rest pose matches the stand KEY. waist_tuck (JK units) is the most of a leftover thigh push that goes to the waist as an overlap; waist_lift (default 0; Lilivane R3 used 0.0015) lets the hip follow the torso up where a waist gap is left and opens the hip joints as much. Reseated copies are written only for KEYs that change, only inside the job directory (job/reseated); inputs are never changed. outputs lists each written file with the size and SHA-256 the server checked. Install only the written files, after review. Reseating stock KEYs changes them for every model in that install. check poses each written KEY against its source; audit.reseat.status fail means a written KEY failed and must not be installed. The check does not show that joints close: run audit_articulation before and after on the same KEYs and step. Kyle's hip layout only (k_hip, k_torso, k_lthigh, k_rthigh and the seated joints, each named once); run it before adding custom tracks that move the hip's frames."""
+        return invoke(service.reseat_keys, model_path, key_dir, keys, stand_key, stand_frame, rest_seats,
+                      waist_tuck, waist_lift, check)
 
     return server
 

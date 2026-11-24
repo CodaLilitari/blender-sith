@@ -77,6 +77,71 @@ def lift_key(lift, start=2):
     return key_text([(0, [(0, (0, 0, 0))]), (1, [(0, (0, 0, 0)), (start, (0, 0, lift))])])
 
 
+# Kyle's layout, which the KEY reseat pass needs: the hip and the torso's carrier hang from the
+# root, the torso from the carrier, the thighs from the hip, and the eight seated joints above the
+# torso. The root carries one box so that the model has geometry.
+KYLE = [("$$$dummy", -1, 0, (0, 0, 0)), ("$$$dummy", 0, -1, (0, 0, 0.01)), ("k_hip", 0, -1, (0, 0, -0.01)),
+        ("k_torso", 1, -1, (0, 0, 0.006)), ("k_lthigh", 2, -1, (-0.008, 0, -0.001)),
+        ("k_rthigh", 2, -1, (0.008, 0, -0.001)), ("k_lshouldr", 3, -1, (-0.02, 0, 0.036)),
+        ("k_lforearm", 6, -1, (-0.011, 0, -0.033)), ("k_lhand", 7, -1, (-0.002, 0, -0.028)),
+        ("k_rshouldr", 3, -1, (0.02, 0, 0.036)), ("k_rforearm", 9, -1, (0.011, 0, -0.033)),
+        ("k_rhand", 10, -1, (0.002, 0, -0.028)), ("k_neck", 3, -1, (0, 0, 0.044)), ("k_head", 12, -1, (0, 0, 0.006))]
+HIP, THIGHS = 2, (4, 5)
+
+
+def kyle_model():
+    return model_text([("box", *box((-R, -D, -H), (R, D, O)))], KYLE)
+
+
+def kyle_key(drop, frames=4):
+    """Every joint at its rest position, except that the hip sits ``drop`` low and both thighs push up
+    into it by as much: the fault of the stock saber KEYs. The legs stay where they were."""
+    tracks = []
+    for index, (_, _, _, (x, y, z)) in enumerate(KYLE):
+        z += -drop if index == HIP else drop if index in THIGHS else 0
+        tracks.append((index, [(0, (x, y, z))]))
+    return key_text(tracks, joints=len(KYLE), frames=frames)
+
+
+# A stand-in for the audit worker: it writes one file into job/reseated and lists it, or lists
+# something else, so that the server's own checks of written files can be tested.
+FORGED_WORKER = '''
+import hashlib, json, sys
+from pathlib import Path
+request = json.loads(Path(sys.argv[1]).read_text())
+case, outside = sys.argv[2], Path(sys.argv[3])
+job = Path(request["result"]).parent
+folder = job / "reseated"
+folder.mkdir()
+written = folder / "a.key"
+written.write_text("reseated")
+
+def record(path, name=None):
+    data = Path(path).read_bytes()
+    return {"name": name or Path(path).name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+
+outputs = [record(written)]
+if case == "outside":
+    outputs = [record(outside, str(outside))]
+elif case == "other_job_file":
+    outputs = [record(job / "input.3do", "../input.3do")]
+elif case == "hash":
+    outputs[0]["sha256"] = "0" * 64
+elif case == "size":
+    outputs[0]["size"] += 1
+elif case == "unlisted":
+    (folder / "b.key").write_text("not listed")
+elif case == "twice":
+    outputs.append(record(written))
+elif case == "not_a_list":
+    outputs = {"a.key": outputs[0]}
+status = {"reseat": "reseated", "budget": "within_limits"}[request["kind"]]
+Path(request["report"]).write_text("{}")
+Path(request["result"]).write_text(json.dumps({"schema": "blender-sith-mcp-audit-v1", "kind": request["kind"],
+                                                request["kind"]: {"status": status}, "outputs": outputs}))
+'''
+
+
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
@@ -112,7 +177,7 @@ class ServiceTests(unittest.TestCase):
     def test_info_does_not_launch_runtime(self):
         info = self.service.info()
         self.assertEqual(info["transport"], "stdio")
-        self.assertEqual(len(info["tools"]), 12)
+        self.assertEqual(len(info["tools"]), 13)
         self.assertTrue(set(server.AUDIT_TOOLS) <= set(info["tools"]))
         self.assertIn("No game-runtime compatibility claim", info["limits"])
         self.assertTrue(any("human or a game test" in line for line in info["limits"]))
@@ -453,6 +518,24 @@ class AuditInputTests(unittest.TestCase):
             ("Each character is", lambda: self.service.audit_track_slots([two[0], {**two[1], "x": 1}])),
             ("custom must be", lambda: self.service.audit_track_slots(two, custom="all")),
             ("custom slots must be", lambda: self.service.audit_track_slots(two, custom=[-1])),
+            ("Give stand_key", lambda: self.service.reseat_keys(model, keys)),
+            ("not both", lambda: self.service.reseat_keys(model, keys, stand_key=stand, rest_seats=True)),
+            ("stand_frame needs stand_key", lambda: self.service.reseat_keys(model, keys, rest_seats=True, stand_frame=2.0)),
+            ("stand_frame must be a finite number",
+             lambda: self.service.reseat_keys(model, keys, stand_key=stand, stand_frame=-1)),
+            ("waist_tuck must be a finite number",
+             lambda: self.service.reseat_keys(model, keys, stand_key=stand, waist_tuck=0.02)),
+            ("waist_tuck must be a finite number",
+             lambda: self.service.reseat_keys(model, keys, stand_key=stand, waist_tuck=True)),
+            ("waist_lift must be a finite number",
+             lambda: self.service.reseat_keys(model, keys, stand_key=stand, waist_lift=float("nan"))),
+            ("waist_lift must be a finite number",
+             lambda: self.service.reseat_keys(model, keys, stand_key=stand, waist_lift=-0.001)),
+            ("rest_seats must be true or false", lambda: self.service.reseat_keys(model, keys, rest_seats=1)),
+            ("check must be true or false", lambda: self.service.reseat_keys(model, keys, rest_seats=True, check="yes")),
+            ("must be a .key file", lambda: self.service.reseat_keys(model, keys, stand_key=model)),
+            ("must be a .3do file", lambda: self.service.reseat_keys(stand, keys, stand_key=stand)),
+            ("no regular file named", lambda: self.service.reseat_keys(model, keys, keys=["missing.key"], rest_seats=True)),
         ]
         for index, (message, call) in enumerate(calls):
             with self.subTest(case=index, message=message), self.assertRaisesRegex(ValueError, message):
@@ -625,6 +708,103 @@ class AuditJobTests(unittest.TestCase):
         self.assertEqual([c["name"] for c in result["inputs"]["characters"]], ["First", "Second"])
         self.assertEqual(result["inputs"]["characters"][1]["keys"]["files"][0]["sha256"], sha256(other / "lift.key"))
 
+    def kyle_files(self):
+        """A Kyle-named model and a KEY folder: the stand KEY, a still KEY and a saber-like KEY."""
+        folder = self.read / "kyle"
+        keys = folder / "key"
+        keys.mkdir(parents=True)
+        model = folder / "kyle.3do"
+        model.write_text(kyle_model())
+        (keys / "stand.key").write_text(kyle_key(0.0, frames=1))
+        (keys / "still.key").write_text(kyle_key(0.0))
+        (keys / "saber.key").write_text(kyle_key(0.004))
+        return model, keys, {path: path.read_bytes() for path in folder.rglob("*") if path.is_file()}
+
+    def test_reseat_writes_only_the_changed_keys_into_the_job(self):
+        model, keys, before = self.kyle_files()
+        result = self.service.reseat_keys(str(model), str(keys), stand_key=str(keys / "stand.key"))
+        audit, full = self.assertPassed(result)
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+        job = Path(result["job_directory"])
+        reseat = audit["reseat"]
+        self.assertEqual((reseat["status"], reseat["seats"], reseat["keys"], reseat["unchanged_keys"]),
+                         ("reseated", "stand.key frame 0", 3, 2))
+        self.assertEqual((reseat["changed_keys"], reseat["changed_keys_total"]), (["saber.key"], 1))
+        self.assertEqual([row["key"] for row in reseat["per_key"]], ["saber.key", "stand.key", "still.key"])
+        row = reseat["per_key"][0]
+        self.assertEqual((row["status"], row["hip_rule"], row["check"], row["written"]), ("reseated", "applied", "pass", True))
+        self.assertEqual(sorted(row["tracks"]), ["2", "4", "5"])
+        for shift in row["tracks"].values():
+            self.assertAlmostEqual(shift, 0.004, places=9)
+        self.assertEqual(reseat["per_key"][2]["status"], "unchanged")
+        check = reseat["check"]
+        self.assertEqual((check["checked_keys"], check["failed_keys"]), (1, []))
+        self.assertAlmostEqual(check["hip_moved"]["value"], 0.004, places=9)
+        self.assertLess(check["fixed_moved_at_frames"]["value"], 1e-12)
+        self.assertEqual(result["inputs"]["reference_key"]["sha256"], sha256(keys / "stand.key"))
+        self.assertEqual(audit["parameters"]["stand"], {"name": "stand.key", "frame": 0.0})
+
+        # The written files, as the server checked them: only the changed KEY, only in job/reseated.
+        self.assertNotIn("outputs", audit)
+        output = job / "reseated" / "saber.key"
+        self.assertEqual(result["outputs"], [{"name": "saber.key", "path": str(output), "size": output.stat().st_size,
+                                              "sha256": sha256(output)}])
+        self.assertEqual([path.name for path in (job / "reseated").iterdir()], ["saber.key"])
+        self.assertEqual(full["reseat"]["written"], [str(output)])
+        # The header names the stand KEY the seats came from, not its snapshot.
+        header = output.read_text().splitlines()[0]
+        self.assertIn("seats from stand.key frame 0", header)
+        self.assertNotIn("reference.key", header)
+
+    def test_reseat_from_rest_seats_without_the_check_and_with_nothing_to_write(self):
+        model, keys, before = self.kyle_files()
+        result = self.service.reseat_keys(str(model), str(keys), keys=["saber.key"], rest_seats=True, check=False)
+        audit, _ = self.assertPassed(result)
+        reseat = audit["reseat"]
+        self.assertEqual((reseat["status"], reseat["seats"], reseat["check"]), ("reseated", "model rest positions", None))
+        self.assertEqual((reseat["per_key"][0]["key"], reseat["per_key"][0]["check"]), ("saber.key", None))
+        self.assertNotIn("reference_key", result["inputs"])
+        self.assertEqual([output["name"] for output in result["outputs"]], ["saber.key"])
+        result = self.service.reseat_keys(str(model), str(keys), keys=["still.key", "stand.key"],
+                                          stand_key=str(keys / "stand.key"))
+        audit, _ = self.assertPassed(result)
+        self.assertEqual((audit["reseat"]["status"], audit["reseat"]["changed_keys"], result["outputs"]),
+                         ("unchanged", [], []))
+        self.assertEqual(list((Path(result["job_directory"]) / "reseated").iterdir()), [])
+        self.assertEqual({path: path.read_bytes() for path in before}, before)
+
+    def test_reseat_needs_kyle_names(self):
+        result = self.service.reseat_keys(str(self.model), str(self.keys), keys=["lift.key"], rest_seats=True)
+        self.assertEqual(result["status"], "process_failed")
+        self.assertIn("'k_hip'", result["diagnostic"])
+        self.assertNotIn("outputs", result)
+
+    def test_written_files_are_checked_before_they_are_reported(self):
+        from unittest.mock import patch
+        model, keys, _ = self.kyle_files()
+        worker = self.root / "forged_worker.py"
+        worker.write_text(FORGED_WORKER)
+        outside = self.root / "outside.key"
+        outside.write_text("outside the job")
+
+        def forged(case):
+            return patch.object(self.service, "runtime_command", side_effect=lambda _, request: [
+                sys.executable, "-B", str(worker), str(request), case, str(outside)])
+
+        with forged("listed"):
+            result = self.service.reseat_keys(str(model), str(keys), rest_seats=True)
+        self.assertEqual(result["status"], "passed", result)
+        self.assertEqual([output["name"] for output in result["outputs"]], ["a.key"])
+        for case in ("outside", "other_job_file", "hash", "size", "unlisted", "twice", "not_a_list"):
+            with self.subTest(case=case), forged(case):
+                result = self.service.reseat_keys(str(model), str(keys), rest_seats=True)
+                self.assertEqual(result["status"], "invalid_report")
+                self.assertNotIn("outputs", result)
+                self.assertNotIn("audit", result)
+        # An audit that writes nothing may not report written files.
+        with forged("listed"):
+            self.assertEqual(self.service.audit_budget(str(self.model))["status"], "invalid_report")
+
     def test_unreadable_model_fails_with_a_diagnostic(self):
         bad = self.read / "bad.3do"
         bad.write_text("not a model")
@@ -693,7 +873,7 @@ class AuditWorkerTests(unittest.TestCase):
                      if isinstance(node, ast.ImportFrom) and node.module}
         self.assertFalse(imported & {"bpy", "bmesh", "mathutils", "bpy_extras"}, imported)
         self.assertEqual(set(self.worker.AUDITS), {"budget", "segmentation", "articulation", "ground", "lint",
-                                                   "track_slots"})
+                                                   "track_slots", "reseat"})
 
 
 if __name__ == "__main__":

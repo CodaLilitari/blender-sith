@@ -15,8 +15,15 @@ It writes three files beside the request:
   index lists to ``FACES``), worst entries first, and each cut list has a ``*_total`` count;
 - ``progress.json``: the stage and the KEYs done so far, rewritten as the audit runs, so that a job
   stopped at its deadline can say how far it got.
+
+The KEY reseat pass is the one audit that writes files, and only into ``reseated`` beside the request:
+a reseated copy of each KEY that changes. ``result.json`` then lists every file there under
+``outputs`` by name, with its size and SHA-256, and the server checks them before it reports them.
+The pass also copies the stand KEY's snapshot into ``stand`` under the stand KEY's own name, because
+``reseatKeyFiles`` records that name as the seat source.
 """
 from dataclasses import asdict
+import hashlib
 import importlib
 import importlib.util
 import json
@@ -446,8 +453,61 @@ def audit_track_slots(request, progress):
     return inputs, {"track_slots": report}, {"track_slots": summary}
 
 
+RESEAT_ORDER = {"unreadable": 0, "fail": 0, "skipped": 1, "review": 1, "reseated": 2, "unchanged": 3}
+
+
+def audit_reseat(request, progress):
+    """Reseat the snapshot KEYs with ``reseatKeyFiles``; the changed ones are written into ``reseated``."""
+    reseat = native("key.keyReseat")
+    loader = native("key.keyLoader")
+    parameters = request["parameters"]
+    progress.update(stage="loading model")
+    model, info = load_model(request["inputs"]["model"])
+    stand = None
+    if parameters["stand"] is not None:
+        # reseatKeyFiles names the seat source after the stand KEY's file name, in its report and in
+        # the header comment of every KEY it writes; the snapshot is called reference.key.
+        name = Path(parameters["stand"]["name"]).name
+        if not name.lower().endswith(".key"):
+            raise ValueError("The stand KEY needs a .key file name")
+        stand = Path(request["result"]).with_name("stand") / name
+        stand.parent.mkdir()
+        stand.write_bytes(Path(request["inputs"]["reference"]).read_bytes())
+        try:
+            loader.loadKey(stand)
+        except Exception as exc:  # the stand KEY is required: report why it cannot be read
+            raise ValueError(f"Stand KEY reader: {type(exc).__name__}: {exc}") from exc
+    paths = request["inputs"]["keys"]
+    progress.update(stage="reseating", keys_total=len(paths))
+    report = reseat.reseatKeyFiles(model, paths, Path(request["result"]).with_name("reseated"), standKeyPath=stand,
+                                   standFrame=parameters["stand"]["frame"] if stand is not None else 0.0,
+                                   waistTuck=parameters["waist_tuck"], waistLift=parameters["waist_lift"],
+                                   check=parameters["check"])
+    progress.update(keys_done=len(paths))
+
+    # One row per KEY, failed checks and unreadable KEYs first. Unreadable KEYs are not in per_key.
+    rows = [{"key": name, "status": entry["status"], "hip_rule": entry["hip_rule"], "check": entry.get("check"),
+             "written": "written" in entry, "tracks": entry["tracks"]} for name, entry in report["per_key"].items()]
+    rows += [{"key": Path(path).name, "status": "unreadable", "hip_rule": None, "check": None, "written": False,
+              "tracks": {}} for path in paths if Path(path).name not in report["per_key"]]
+    rows.sort(key=lambda row: (0 if row["check"] == "fail" else RESEAT_ORDER.get(row["status"], 1),
+                               row["key"].casefold(), row["key"]))
+    summary = pick(report, ("status", "seats", "keys", "unchanged_keys", "check", "issue_counts", "findings",
+                            "findings_truncated"))
+    cut(summary, "changed_keys", report["changed_keys"])
+    cut(summary, "per_key", rows)
+    outputs = []
+    for path in map(Path, report["written"]):
+        data = path.read_bytes()
+        outputs.append({"name": path.name, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+    inputs = {"model": info, "keys": {"count": len(paths), "unreadable": len(paths) - len(report["per_key"])},
+              "seats": report["seats"]}
+    # "outputs" goes to the top level of result.json, where the server looks for written files.
+    return inputs, {"reseat": report}, {"reseat": summary, "outputs": outputs}
+
+
 AUDITS = {"budget": audit_budget, "segmentation": audit_segmentation, "articulation": audit_articulation,
-          "ground": audit_ground, "lint": audit_lint, "track_slots": audit_track_slots}
+          "ground": audit_ground, "lint": audit_lint, "track_slots": audit_track_slots, "reseat": audit_reseat}
 
 
 def run(request):

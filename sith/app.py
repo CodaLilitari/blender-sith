@@ -1047,6 +1047,8 @@ class Model3doPanel(bpy.types.Panel):
 # The operators read the scene or files and write reports to Text datablocks. None of
 # them changes model data; Colour Pieces changes only viewport object colours and the
 # 3D View's colour mode, and records them so that Restore Colours puts them back.
+# Reseat KEYs is the one that writes files: new KEYs, only into the folder the user
+# chooses, never into the KEY folder and never over an existing file.
 
 kAuditReportText = 'sith_audit_report'      # on Text datablocks these operators write: the report name
 kSavedObjectColor = '_sith_saved_color'     # an object's colour before Colour Pieces
@@ -1535,8 +1537,201 @@ class AuditFiles(bpy.types.Operator, ImportHelper):
         return results
 
 
+def _reseat_output_folder(value: str, keyFolder: Path, paths) -> Path:
+    """The Output Folder for reseated KEYs, refused where writing there could replace a file.
+
+    It must be an absolute path that is not the KEY folder and holds no entry named like one of the
+    KEYs to reseat. Names are compared without case, as the engine and Windows compare them.
+    """
+    if not value.strip():
+        raise ValueError('Choose an Output Folder for the reseated KEYs')
+    folder = Path(bpy.path.abspath(value))
+    if not folder.is_absolute():
+        raise ValueError(f'The Output Folder must be an absolute path: {value}')
+    if folder.exists() and not folder.is_dir():
+        raise ValueError(f'The Output Folder is a file: {folder}')
+    if folder.resolve() == keyFolder.resolve() or (folder.is_dir() and folder.samefile(keyFolder)):
+        raise ValueError('The Output Folder is the KEY folder; choose another folder')
+    if folder.is_dir():
+        present = {entry.name.casefold() for entry in folder.iterdir()}
+        clash = [path.name for path in paths if path.name.casefold() in present]
+        if clash:
+            raise ValueError(f"The Output Folder already holds {', '.join(clash[:3])}"
+                             f"{' and others' if len(clash) > 3 else ''}; Reseat KEYs never replaces a file")
+    return folder
+
+
+class ReseatKeys(bpy.types.Operator, ImportHelper):
+    """Reseat a 3DO file's KEYs (sith.key.keyReseat): the hip piece and the seated joints go back on their seats and no rotation changes. Reseated copies are written only for KEYs that change, only into the Output Folder; nothing is written into the KEY folder and no file is replaced. Reseating stock KEYs changes them for every model in that install. Run the joint-gap audit before and after on the same KEYs and step. Kyle's hip layout only; run it before adding custom tracks that move the hip's frames"""
+    bl_idname    = 'sith.reseat_keys'
+    bl_label     = 'Reseat KEYs'
+    filename_ext = '.3do'
+
+    filter_glob: bpy.props.StringProperty(
+        default = '*.3do',
+        options = {'HIDDEN'}
+    )
+    key_directory: bpy.props.StringProperty(
+        name        = 'KEY Folder',
+        description = "Folder of the KEYs to reseat. Blank uses the 'key' folder beside the 3DO. Nothing is written into it",
+        subtype     = 'DIR_PATH',
+    )
+    key_files: bpy.props.StringProperty(
+        name        = 'KEY Files',
+        description = 'Comma-separated KEY file names in the KEY Folder. Blank reseats every .key file in it',
+    )
+    seats: bpy.props.EnumProperty(
+        name        = 'Seats',
+        description = "Where each joint's seat comes from",
+        items       = [('KEY', 'Stand KEY', 'The positions a stand KEY holds at its frame: kystand1.key at frame 0 for Darth Lilitari R9.10 and Lilivane R3'),
+                       ('REST', 'Model Rest Positions', "The model's rest positions. Use them only when the rest pose matches the stand KEY")],
+        default     = 'KEY',
+    )
+    stand_key: bpy.props.StringProperty(
+        name        = 'Stand KEY File',
+        description = 'A file name in the KEY Folder or a path',
+        default     = 'kystand1.key',
+        subtype     = 'FILE_PATH',
+    )
+    stand_frame: bpy.props.FloatProperty(
+        name        = 'Stand Frame',
+        description = 'Frame of the stand KEY',
+        default     = 0.0,
+        min         = 0.0,
+    )
+    waist_tuck: bpy.props.FloatProperty(
+        name        = 'Waist Tuck',
+        description = "The most of the thighs' leftover push into the hip that goes to the waist as a small overlap, in JK units",
+        default     = 0.0025,
+        min         = 0.0,
+        max         = 0.01,
+        precision   = 4,
+    )
+    waist_lift: bpy.props.FloatProperty(
+        name        = 'Waist Lift',
+        description = 'How far the hip may follow the torso up where a waist gap is left, in JK units. It opens the hip joints by as much. Lilivane R3 used 0.0015',
+        default     = 0.0,
+        min         = 0.0,
+        max         = 0.01,
+        precision   = 4,
+    )
+    check_written: bpy.props.BoolProperty(
+        name        = 'Check',
+        description = 'Load each written KEY back and pose it against its source: no rotation may change and no joint but the hip and the seated joints may move. A failed check is an error',
+        default     = True,
+    )
+    output_directory: bpy.props.StringProperty(
+        name        = 'Output Folder',
+        description = 'Required. Folder for the reseated KEYs. It must not be the KEY Folder or hold a file named like one of the KEYs',
+        subtype     = 'DIR_PATH',
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        keys = layout.box().column()
+        keys.label(text='KEYs')
+        keys.prop(self, 'key_directory')
+        keys.prop(self, 'key_files')
+        seats = layout.box().column()
+        seats.prop(self, 'seats')
+        if self.seats == 'KEY':
+            seats.prop(self, 'stand_key')
+            seats.prop(self, 'stand_frame')
+        rule = layout.box().column()
+        rule.prop(self, 'waist_tuck')
+        rule.prop(self, 'waist_lift')
+        rule.prop(self, 'check_written')
+        layout.prop(self, 'output_directory')
+
+    def execute(self, context):
+        if not self.filepath or not os.path.isfile(self.filepath) or not self.filepath.lower().endswith('.3do'):
+            self.report({'ERROR'}, 'Select an existing .3do file')
+            return {'CANCELLED'}
+        try:
+            report, outDir, text = self._reseat(Path(self.filepath))
+        except (AssertionError, ValueError, OSError, EOFError, TypeError) as error:
+            self.report({'ERROR'}, f'Cannot reseat the KEYs: {error}')
+            return {'CANCELLED'}
+        status, changed = report['status'], report['changed_keys']
+        names = ', '.join(changed[:5]) + (f' and {len(changed) - 5} more' if len(changed) > 5 else '')
+        review = f"; {sum(report['issue_counts'].values())} findings need review" if status == 'review' else ''
+        if status == 'fail':
+            failed = report['check']['failed_keys']
+            self.report({'ERROR'}, f"The check failed for {', '.join(failed)}: do not install them. "
+                                   f"Wrote {len(changed)} KEYs to '{outDir}'. Report: '{text.name}'")
+        elif changed:
+            self.report({'WARNING'} if review else {'INFO'},
+                        f"Wrote {len(changed)} reseated KEYs to '{outDir}': {names}{review}. "
+                        f"Install only these, after review. Report: '{text.name}'")
+        elif review:
+            self.report({'WARNING'}, f"No KEY was written{review}. Report: '{text.name}'")
+        else:
+            self.report({'INFO'}, f"No KEY needed reseating; nothing was written. Report: '{text.name}'")
+        return {'FINISHED'}
+
+    def _reseat(self, modelPath: Path):
+        from .key.keyReseat import reseatKeyFiles
+        from .model.model3doLoader import load3do
+
+        folder = Path(bpy.path.abspath(self.key_directory)) if self.key_directory else modelPath.parent / 'key'
+        if not folder.is_dir():
+            raise ValueError(f'KEY folder not found: {folder}')
+        paths = _audit_key_paths(folder, self.key_files)
+        if not paths:
+            raise ValueError(f'The KEY folder has no .key files: {folder}')
+        outDir = _reseat_output_folder(self.output_directory, folder, paths)
+        stand = None
+        if self.seats == 'KEY':
+            if not self.stand_key.strip():
+                raise ValueError('Give the Stand KEY File')
+            stand = Path(bpy.path.abspath(self.stand_key))
+            if not stand.is_absolute():
+                stand = folder / self.stand_key
+            if not stand.is_file():
+                raise ValueError(f'Stand KEY not found: {stand}')
+        model, _ = load3do(modelPath)
+        if not model.meshHierarchy:
+            raise ValueError('The 3DO has no hierarchy')
+        existing = set(outDir.iterdir()) if outDir.is_dir() else set()
+        try:
+            report = reseatKeyFiles(model, paths, outDir, standKeyPath=stand, standFrame=self.stand_frame,
+                                    waistTuck=self.waist_tuck, waistLift=self.waist_lift, check=self.check_written)
+        except (AssertionError, ValueError, OSError, EOFError, TypeError) as error:
+            written = sorted(path.name for path in outDir.iterdir() if path not in existing) if outDir.is_dir() else []
+            if written:
+                raise ValueError(f"{error}. Written to '{outDir}' before the error: {', '.join(written)}") from error
+            raise
+
+        check = report['check']
+        review = sorted(name for name, entry in report['per_key'].items() if entry['status'] in ('review', 'skipped'))
+        lines = [f'3DO: {modelPath}', f'KEY folder: {folder}', f'KEYs: {len(paths)}', f"Seats: {report['seats']}",
+                 f'Waist tuck: {self.waist_tuck:g}; waist lift: {self.waist_lift:g}', f'Output folder: {outDir}', '',
+                 f"Status: {report['status']}",
+                 f"Written: {len(report['changed_keys'])} KEYs; unchanged: {report['unchanged_keys']}",
+                 *(f'  {name}' for name in report['changed_keys'])]
+        if review:
+            lines.append(f"Need review: {', '.join(review)}")
+        if check is not None:
+            lines += ['', f"Check: {check['checked_keys']} KEYs posed; failed: {', '.join(check['failed_keys']) or 'none'}"]
+            for metric in ('largest_orientation_change', 'fixed_moved_at_frames', 'fixed_moved_between_frames',
+                           'hip_moved', 'seated_moved'):
+                worst = check[metric]
+                where = f" ({worst['key']}, {worst['name']} at frame {worst['time']:g})" if worst['key'] else ''
+                lines.append(f"  {metric.replace('_', ' ')}: {worst['value']:.3g}{where}")
+        lines.append('')
+        for f in report['findings']:
+            details = ', '.join(f'{name} {value}' for name, value in f.items() if name not in ('key', 'code'))
+            lines.append(f"{f.get('key', '')}: {f['code']} {details}".rstrip())
+        if not report['findings']:
+            lines.append('No findings.')
+        lines += ['', 'Install only the written KEYs, after review. Run Audit Files with Joint Gaps on the source '
+                      'and the written KEYs, with the same KEY Files, Step and reference pose.']
+        text = _audit_text(f'{modelPath.name} - KEY Reseat', _audit_document('KEY Reseat', lines, report))
+        return report, outDir, text
+
+
 class SithAuditPanel(bpy.types.Panel):
-    """Native model and KEY audits for the active model or for files"""
+    """Native model and KEY audits for the active model or for files, and the KEY reseat pass"""
     bl_idname      = 'VIEW3D_PT_sith_audits'
     bl_label       = 'Sith Audits'
     bl_space_type  = 'VIEW_3D'
@@ -1551,6 +1746,7 @@ class SithAuditPanel(bpy.types.Panel):
         row.operator(ColourPieces.bl_idname, icon='COLOR')
         row.operator(RestoreColours.bl_idname, icon='LOOP_BACK')
         layout.operator(AuditFiles.bl_idname, icon='FILE_FOLDER')
+        layout.operator(ReseatKeys.bl_idname, icon='KEYINGSET')
         layout.label(text='Reports open in the Text Editor')
 
 
@@ -1759,6 +1955,7 @@ classes = (
     ColourPieces,
     RestoreColours,
     AuditFiles,
+    ReseatKeys,
     SithAuditPanel,
 )
 

@@ -37,6 +37,7 @@ class DialogDocumentationTests(unittest.TestCase):
             'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
             'ColourPieces': ('Auditing Models', 'Troubleshooting'),
             'AuditFiles': ('Auditing Models', 'Troubleshooting'),
+            'ReseatKeys': ('Auditing Models', 'Troubleshooting'),
         }
         for name, bounds in sections.items():
             section = self.section(*bounds)
@@ -92,6 +93,7 @@ class DialogDocumentationTests(unittest.TestCase):
             'ImportKey': ('Importing KEY Animations', 'Exporting KEY Animations'),
             'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
             'AuditFiles': ('Auditing Models', 'Troubleshooting'),
+            'ReseatKeys': ('Auditing Models', 'Troubleshooting'),
         }
         for name, bounds in sections.items():
             for member in self.classes[name].body:

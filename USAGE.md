@@ -11,7 +11,7 @@ A quick guide to importing, editing and exporting game models, animations and te
 | 🖼️ **MAT Textures** | [Import](#-importing-mat-textures) · [Export](#exporting-mat-textures) · [Export options](#mat-export-options) · [Encodings](#encodings) |
 | 📤 **MAT Export Locations** | [Outliner](#outliner) · [Image Editor](#image-editor) · [Material Properties](#material-properties) |
 | 🎛️ **Editing** | [3DO properties](#-editing-3do-properties) · [Object properties](#-object-3do-properties) · [Face properties](#-mesh-face-properties) · [Extra Light preview](#extra-light-preview) |
-| 🔍 **Audits** | [Sith Audits panel](#-auditing-models) · [Check Retail Limits](#check-retail-limits) · [Colour Pieces](#colour-pieces-and-restore-colours) · [Audit Files](#audit-files) |
+| 🔍 **Audits** | [Sith Audits panel](#-auditing-models) · [Check Retail Limits](#check-retail-limits) · [Colour Pieces](#colour-pieces-and-restore-colours) · [Audit Files](#audit-files) · [Reseat KEYs](#reseat-keys) |
 | 🔧 **Help** | [Troubleshooting](#-troubleshooting) · [Compatibility notes](docs/blender-compatibility.md) · [Technical reference](docs/README.md) |
 
 ## 📥 Importing 3DO Models
@@ -367,8 +367,9 @@ file/Blender guarantees are not a game-runtime test.
 Open the 3D View sidebar (**N**) and its **Sith** tab. The **Sith Audits** panel
 runs the [native audits](docs/audits/) on the active model or on files. Each
 report goes to a Text datablock; open it in the **Text Editor**. The commands
-do not change model data and do not write files. A finding is a lead to look
-at in Blender or in the game, not a verdict.
+do not change model data. **Reseat KEYs** writes new KEYs to the folder you
+choose; the others write no files. A finding is a lead to look at in Blender or
+in the game, not a verdict.
 
 ### Check Retail Limits
 
@@ -443,6 +444,60 @@ Text `<3DO file> - <check>`: a summary, then the complete report.
 The floor is where physics holds a standing player, not the model's lowest
 point. Jumps, falls, deaths and swims float or sink by design. Floor Contact does
 not measure foot slip; the Python and MCP audits can.
+
+### Reseat KEYs
+
+1. Click **Reseat KEYs** and select the character's 3DO file.
+2. Set the KEY folder, the seats and the **Output Folder** in the file browser's side panel.
+3. Click **Reseat KEYs**.
+
+Stock KEYs push some joints a few thousandths of a JK unit off their seats, and a
+character cut into close-fitting pieces opens there. **Reseat KEYs** puts those
+joints back in the KEY data ([KEY reseat](docs/audits/reseat.md)). The hip piece
+moves back between the torso and the thighs; the shoulders, forearms, hands, neck
+and head go back to their seats. No rotation changes, and the torso and the legs
+stay where the KEY put them.
+
+It is the one command in the panel that writes files. It writes a reseated copy
+only of each KEY that changes, only into the **Output Folder**. It never writes
+into the KEY folder, never replaces a file and does not change the 3DO. The
+report is the Text `<3DO file> - KEY Reseat`: the KEYs written, the check, then
+the complete report.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| **KEY Folder** | Blank | The KEYs to reseat. Blank uses the `key` folder beside the 3DO. Nothing is written into it. |
+| **KEY Files** | Blank | Comma-separated file names in the KEY folder. Blank reseats every `.key` file. |
+| **Seats** | Stand KEY | Where each joint's seat comes from: **Stand KEY**, or **Model Rest Positions** only when the rest pose matches the stand KEY. |
+| **Stand KEY File** | `kystand1.key` | Shown for **Stand KEY**: a file name in the KEY folder, or a path. |
+| **Stand Frame** | 0 | Shown for **Stand KEY**: the frame of that KEY. |
+| **Waist Tuck** | 0.0025 | The most of the thighs' leftover push into the hip that goes to the waist as a small overlap, in JK units. |
+| **Waist Lift** | 0 | How far the hip may follow the torso up where a waist gap is left. The hip joints open by as much. Lilivane R3 used 0.0015. |
+| **Check** | On | Load each written KEY back and pose it against its source: no rotation may change, and no joint but the hip and the seated joints may move. A failed check is an error; do not install that KEY. |
+| **Output Folder** | Blank | Required. The folder for the reseated KEYs. It must not be the KEY folder or hold a file named like one of the KEYs. |
+
+> ⚠️ A GOB's KEYs replace the stock ones for every player model in that
+> install. Reseated stock KEYs change the joints of the other characters too.
+
+Install only the written KEYs, after review. Its limits:
+
+- The check shows that nothing else moved, not that the joints close. Run
+  **Audit Files** with **Joint Gaps** before and after, on the same KEYs, **Step**
+  and reference pose: on the KEY folder with **KEY Files** set to the written
+  KEYs, then on the Output Folder. Give the **Reference KEY File** as a path, so
+  that both runs use the same file.
+- It needs Kyle's hip layout, with one node each named `k_hip`, `k_torso`,
+  `k_lthigh`, `k_rthigh`, `k_lshouldr`, `k_lforearm`, `k_lhand`, `k_rshouldr`,
+  `k_rforearm`, `k_rhand`, `k_neck` and `k_head`. Run it before adding custom
+  tracks that move the hip's frames, such as ground-contact tracks: with them the
+  hip rule is reported as unsupported and the hip is left alone.
+- It rewrites Kyle's own tracks, never adapter tracks. A rig whose stock tracks
+  must stay byte for byte, such as Biddy Blas's, needs another fix.
+- It cannot close a waist that opens from rotation alone, with every joint on
+  its seat.
+- Each KEY is checked alone at full weight. Blends, fades, the player's aim
+  pitch and puppet timing are not checked.
+- Text KEYs only.
 
 ## 🔧 Troubleshooting
 
