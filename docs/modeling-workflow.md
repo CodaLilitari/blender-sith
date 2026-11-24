@@ -514,7 +514,7 @@ the right strafe (`kystrafr`, 9 of 40).
    far each KEY moves each node off its seat, and `auditArticulation` for daylight.
 2. Where seat offsets open a joint, reseat the KEYs with `sith.key.keyReseat.reseatKeyFiles`, the
    MCP tool `reseat_keys` or **Reseat KEYs** in Blender. Each writes a reseated copy of only the
-   KEYs that change, never over a source KEY. The rules:
+   KEYs that change, and none replaces a file. The rules:
    - the arm, neck and head joints go back to their standing seats;
    - the hip piece moves between the torso and the legs, which stay exactly where the animation
      put them. Axis by axis in the hip's frame: where the hip's and the thighs' offsets point

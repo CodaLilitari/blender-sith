@@ -506,6 +506,30 @@ class CheckTests(unittest.TestCase):
         self.assertIn(check['fixed_moved_at_frames']['name'], ('k_lthigh', 'k_lcalf'))
         self.assertAlmostEqual(check['fixed_moved_at_frames']['value'], 0.001, places=12)
 
+    def test_what_hangs_from_the_hip_or_a_seated_joint_moves_with_it(self):
+        # Adapters as on Darth Lilitari: one hangs from the left forearm, one sits between the hip and
+        # the left thigh. Both move with their parent and pass; the thigh below them stays fixed.
+        nodes = list(RIG) + [('a_lforearm', LFOREARM, (0.0, 0.0, -0.01)), ('a_lthigh', HIP, (0.0, 0.0, -0.001))]
+        pad, thighPad = len(RIG), len(RIG) + 1
+        nodes[LTHIGH] = ('k_lthigh', thighPad, RIG[LTHIGH][2])
+        model = rig(nodes)
+        result, report = reseatKey(model, self.source, keySeats(standKey()))
+        self.assertEqual(report['hip_rule'], 'applied')
+        self.assertEqual(checkReseat(model, self.source, result)['status'], 'pass')
+
+        def moved(index):
+            return max(float(np.linalg.norm(world(model, self.source, t)[index, :3, 3]
+                                            - world(model, result, t)[index, :3, 3])) for t in range(FRAMES))
+
+        self.assertGreater(moved(pad), 0.003)        # carried by the reseated forearm
+        self.assertGreater(moved(thighPad), 0.003)   # carried by the hip
+        self.assertLess(moved(LTHIGH), 1e-12)
+        bad = copy.deepcopy(result)
+        first = keyTrack(bad, LTHIGH).keyframes[0]
+        first.position = Vector3f(first.position[0], first.position[1], first.position[2] + 0.0001)
+        failed = checkReseat(model, self.source, bad)
+        self.assertEqual((failed['status'], failed['fixed_moved_at_frames']['time']), ('fail', 0.0))
+
     def test_rotation_and_untouched_track_changes_are_found(self):
         bad = copy.deepcopy(self.result)
         first = keyTrack(bad, HIP).keyframes[0]
@@ -597,6 +621,32 @@ class FileTests(unittest.TestCase):
         out = os.path.join(self.directory.name, 'out')
         with self.assertRaisesRegex(ValueError, 'Two KEYs are named'):
             reseatKeyFiles(self.model, self.paths + [twin], out, standKeyPath=self.stand)
+        self.assertFalse(os.path.exists(out))
+
+    def test_never_replaces_a_file_in_the_output_folder(self):
+        out = os.path.join(self.directory.name, 'out')
+        os.makedirs(os.path.join(out, 'Still.KEY'))             # a folder, named like a KEY that is not written
+        mine = os.path.join(out, 'KYSABR.KEY')                  # the user's own file, named like a written KEY
+        with open(mine, 'w', encoding='utf-8') as stream:
+            stream.write('my notes\n')
+        with self.assertRaisesRegex(ValueError, 'already holds kysabr.key, still.key; reseatKeyFiles never replaces'):
+            reseatKeyFiles(self.model, self.paths, out, standKeyPath=self.stand)
+        with open(mine, encoding='utf-8') as stream:
+            self.assertEqual(stream.read(), 'my notes\n')
+        self.assertEqual(sorted(os.listdir(out)), ['KYSABR.KEY', 'Still.KEY'])
+        # Other entries are left alone and do not stop the run.
+        other = os.path.join(self.directory.name, 'other')
+        os.makedirs(other)
+        with open(os.path.join(other, 'notes.txt'), 'w', encoding='utf-8') as stream:
+            stream.write('notes\n')
+        report = reseatKeyFiles(self.model, self.paths, other, standKeyPath=self.stand)
+        self.assertEqual((report['status'], sorted(os.listdir(other))), ('reseated', ['kysabr.key', 'notes.txt']))
+
+    def test_a_refused_model_leaves_no_output_folder(self):
+        nodes = [('pelvis' if name == 'k_hip' else name, parent, position) for name, parent, position in RIG]
+        out = os.path.join(self.directory.name, 'out')
+        with self.assertRaisesRegex(ValueError, "0 nodes named 'k_hip'"):
+            reseatKeyFiles(rig(nodes), self.paths, out, standKeyPath=self.stand)
         self.assertFalse(os.path.exists(out))
 
     def test_unreadable_key_is_reported(self):
