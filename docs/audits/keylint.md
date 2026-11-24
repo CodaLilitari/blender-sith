@@ -11,6 +11,8 @@ returns plain data. It never edits its inputs.
 | `keyPriorityReport` | Which model nodes does the KEY drive, and at which priority? |
 | `trackRegistry` | Can several characters' KEYs share one pack? |
 
+The KEY exporter also changed: see [Export continuity](#export-continuity).
+
 ## Why it exists
 
 Three faults in custom characters led to it.
@@ -179,6 +181,24 @@ Equal tracks are not findings. A slot that lands on a node with no mesh anywhere
 a finding. Each finding gives the slot, both characters, both node names, how many KEY names
 clash and up to 8 of them. `characters` lists each character's custom slots with the node name
 in its own model and how many of its KEYs drive the slot.
+
+## Export continuity
+
+The exporter samples quaternion, axis-angle and non-YXZ Euler animation and converts each sample
+to pitch, yaw and roll. Blender's compatible-Euler conversion can still return the other form,
+or a triple far from the previous one, near pitch ±90. Before this change, a quaternion move into
+pitch -90 could write a segment that swung yaw and roll by about 145 degrees each while the
+rotation moved by a fraction of a degree. The pose was right at full weight. A fade scaled those
+components and showed the swing.
+
+Each converted sample now takes `nearestEuler(previous sample, sample)`. That is the same
+rotation, written as the triple nearest the previous one. Curves authored in the native YXZ
+Euler order are still written as authored, including deliberate full turns and the long way
+round. The bake still checks every segment in rotation space, as before.
+`tests/app/test_key_euler_continuity.py` covers both cases.
+
+The exporter still writes `JOINTS` as the number of exported hierarchy nodes. The lint
+recommends 64 for JKDF2 and MOTS. No export option was added for it.
 
 ## Limits
 
