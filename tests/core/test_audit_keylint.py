@@ -9,10 +9,11 @@ import numpy as np
 from sith.audit.keylint import (Character, PopLimits, keyPriorityReport, lintKeyHeader,
                                 rotationAngle, scanKeyPops, trackRegistry)
 from sith.audit.pose import PoseLayer, rotationMatrix
-from sith.key.key import Key, Keyframe, KeyframeFlag, KeyNode
+from sith.key.key import Key, Keyframe, KeyframeFlag, KeyMarker, KeyMarkerType, KeyNode
 from sith.key.keyEuler import eulerTwin, nearestEuler, unwrapEuler
 from sith.key.keyLoader import loadKey
 from sith.key.keyWriter import saveKey
+from sith.key.modelBinding import auditModelKey, keyTargetFindings
 from sith.model.model3do import Mesh3do, Mesh3doNode, Mesh3doNodeType, Model3do, Model3doGeoSet
 from sith.types import Vector3f
 
@@ -185,6 +186,49 @@ class HeaderTests(unittest.TestCase):
         self.assertEqual([n.idx for n in loaded.nodes], [0, 0, 2])
         self.assertEqual(lintKeyHeader(loaded)['issue_counts'], {'track_past_joints': 1, 'duplicate_track': 1})
 
+    def test_tracks_past_the_puppet_cursor_array_without_a_model(self):
+        # JOINTS 70: tracks 64 and up lie inside JOINTS but past the puppet's 64 entry cursors.
+        moving = [entry(0), entry(5, (0, 10, 0))]
+        k = key({0: moving, 64: moving, 65: [], 66: [entry(0)], 69: moving}, joints=70)
+        report = lintKeyHeader(k)
+        self.assertEqual(report['status'], 'incompatible')
+        self.assertEqual(report['issue_counts'], {'key_target_limit': 1, 'track_past_puppet_nodes': 3})
+        past = [(f['index'], f['key_name'], f['entries'], f['joints']) for f in report['findings']
+                if f['code'] == 'track_past_puppet_nodes']
+        # The empty track 65 is never read; a one-entry track is read past the array too.
+        self.assertEqual(past, [(64, 'n64', 2, 70), (66, 'n66', 1, 70), (69, 'n69', 2, 70)])
+        limit = next(f for f in report['findings'] if f['code'] == 'key_target_limit')
+        self.assertIn('at most 64 KEY joints; found 70', limit['detail'])
+        # At or past JOINTS the track is outside the allocation instead, and only that is reported.
+        self.assertEqual(lintKeyHeader(key({64: moving}, joints=64))['issue_counts'], {'track_past_joints': 1})
+
+    def test_markers_frames_and_fps_without_a_model(self):
+        markers = key({0: [entry(0)]}, joints=64)
+        for frame in range(9):
+            marker = KeyMarker()
+            marker.frame, marker.type = float(frame), KeyMarkerType.LeftFoot
+            markers.markers.append(marker)
+        declared = key({0: [entry(0)]}, joints=64)
+        declared.sourceMarkerCount, declared.sourceSkippedMarkers = 9, 9   # the loader kept none of 9
+        cases = [(markers, {'key_target_limit': 1}, 'at most 8 KEY markers; found 9'),
+                 (declared, {'key_target_limit': 1, 'unrecognized_markers': 1}, 'source declares 9'),
+                 (key({0: [entry(0)]}, joints=64, frames=0), {'invalid_playback_header': 1}, 'must be positive'),
+                 (key({0: [entry(0)]}, joints=64, fps=0.0), {'invalid_playback_header': 1}, 'must be positive')]
+        for k, counts, detail in cases:
+            with self.subTest(counts=counts, detail=detail):
+                report = lintKeyHeader(k)
+                self.assertEqual((report['status'], report['issue_counts']), ('incompatible', counts))
+                self.assertIn(detail, report['findings'][0]['detail'])
+                # One shared helper: the binding audit reports the same header findings.
+                self.assertEqual([code for _, code, _ in keyTargetFindings(k)], list(counts))
+                binding = auditModelKey(chain(), k)['issue_counts']
+                self.assertEqual({code: binding[code] for code in counts}, counts)
+                # With a model they are the binding audit's, not counted twice.
+                withModel = lintKeyHeader(k, chain())
+                self.assertEqual((withModel['issue_counts'], withModel['status']), ({}, 'incompatible'))
+        with self.assertRaises(ValueError):
+            keyTargetFindings(markers, 'IJIM')
+
 
 class PopTests(unittest.TestCase):
     def test_smooth_motion_has_no_findings(self):
@@ -260,6 +304,63 @@ class PopTests(unittest.TestCase):
         k = key({1: path(rots)}, frames=20, fps=30.0)
         self.assertEqual(scanKeyPops(k)['issue_counts'], {})
         self.assertGreaterEqual(scanKeyPops(k, limits=PopLimits(guard=1.0))['issue_counts']['velocity_spike'], 1)
+
+    def test_spike_needs_eight_times_the_floor_by_default(self):
+        # One frame of motion between still neighbours, keyed with deltas: no entry jumps.
+        def burst(degrees, fps):
+            rots = [(0, 0, 0)] * 10 + [(0, degrees, 0)] * 11
+            return scanKeyPops(key({1: path(rots)}, frames=20, fps=fps))['issue_counts']
+
+        self.assertEqual(burst(150, 15.0), {})                      # 2,250 degrees per second
+        self.assertEqual(burst(190, 15.0), {})                      # 2,850: still below 8 x 360
+        self.assertEqual(burst(150, 30.0), {'velocity_spike': 1})   # 4,500
+
+    def test_entry_jump_where_the_previous_motion_ends_elsewhere(self):
+        # Still at (0, 0, 0), then still at (0, 30, 0) from frame 10, at 15 FPS: too slow for a spike.
+        report = scanKeyPops(key({1: [entry(0), entry(10, (0, 30, 0))]}, frames=20))
+        self.assertEqual((report['status'], report['issue_counts']), ('review', {'entry_jump': 1}))
+        jump = report['findings'][0]
+        self.assertEqual((jump['index'], jump['key_name'], jump['entry'], jump['frame'], jump['distance'],
+                          jump['form']), (1, 'n1', 1, 10.0, 0.0, None))
+        self.assertAlmostEqual(jump['angle'], 30.0, places=3)
+        # A jump big enough for a speed spike is one finding; with a model the hand it throws is another.
+        big = key({1: [entry(0), entry(10, (0, 50, 0))]}, frames=20)
+        self.assertEqual(scanKeyPops(big)['issue_counts'], {'entry_jump': 1})
+        self.assertEqual(scanKeyPops(big, chain())['issue_counts'], {'entry_jump': 1, 'position_jump': 1})
+        # The entry's own delta runs from where it starts; a delta that reaches the next entry is smooth.
+        smooth = key({1: [entry(0, drot=(0, 3, 0)), entry(10, (0, 30, 0))]}, frames=20)
+        self.assertEqual(scanKeyPops(smooth)['issue_counts'], {})
+
+    def test_entry_jump_names_the_euler_form_and_position(self):
+        twin = scanKeyPops(key({1: [entry(0), entry(10, eulerTwin((0, 30, 0)))]}, frames=20))
+        self.assertEqual(twin['issue_counts'], {'entry_jump': 1})
+        self.assertEqual(twin['findings'][0]['form'], 'twin')
+        self.assertAlmostEqual(twin['findings'][0]['angle'], 30.0, places=3)
+        turn = scanKeyPops(key({1: [entry(0), entry(10, (0, 390, 0))]}, frames=20))
+        self.assertEqual((turn['issue_counts'], turn['findings'][0]['form']), ({'entry_jump': 1}, 'turn'))
+        moved = scanKeyPops(key({1: [entry(0), entry(10, pos=(0, 0, 0.004))]}, frames=20))
+        self.assertEqual(moved['issue_counts'], {'entry_jump': 1})
+        self.assertEqual((moved['findings'][0]['angle'], moved['findings'][0]['distance']), (0.0, 0.004))
+        self.assertEqual(scanKeyPops(key({1: [entry(0), entry(10, pos=(0, 0, 0.0009))]}, frames=20))['issue_counts'], {})
+        glide = [entry(0), entry(10, pos=(0, 0, 0.004))]
+        glide[0].flags, glide[0].deltaPosition = KeyframeFlag.PositionChange, Vector3f(0.0, 0.0, 0.0004)
+        self.assertEqual(scanKeyPops(key({1: glide}, frames=20))['issue_counts'], {})
+
+    def test_entry_angle_is_the_limit_of_a_continuous_entry(self):
+        small = key({1: [entry(0), entry(5, (0, 1.5, 0))]}, frames=10)
+        self.assertEqual(scanKeyPops(small)['issue_counts'], {})
+        self.assertEqual(scanKeyPops(small, limits=PopLimits(entryAngle=1.0))['issue_counts'], {'entry_jump': 1})
+        # Within entryAngle an entry stored in the other Euler form is a form switch; past it, a jump.
+        switched = key({1: [entry(0, (10, 20, 30)), entry(5, eulerTwin((10, 21.5, 30)))]}, frames=10)
+        report = scanKeyPops(switched)
+        self.assertEqual(report['issue_counts'], {'form_switch': 1})
+        self.assertAlmostEqual(report['findings'][0]['component_change'], 180.0, places=6)
+        tight = scanKeyPops(switched, limits=PopLimits(entryAngle=1.0))
+        self.assertEqual((tight['issue_counts'], tight['findings'][0]['form']), ({'entry_jump': 1}, 'twin'))
+        self.assertEqual((tight['limits']['entryAngle'], tight['limits']['entryDistance']), (1.0, 0.001))
+        for bad in ({'entryAngle': -1.0}, {'entryDistance': float('nan')}):
+            with self.assertRaises(ValueError):
+                PopLimits(**bad)
 
     def test_position_scan_node_selection_and_base_layers(self):
         rots = [(0, f, 0) if f <= 10 else eulerTwin((0, f, 0)) for f in range(21)]
