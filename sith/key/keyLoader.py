@@ -21,8 +21,14 @@ from ..text.tokenizer import TokenType, Tokenizer
 from ..model import Mesh3doNodeType
 from typing import Union
 
-def loadKey(filePath: Union[Path, str], *, allowErrors=False, warnings=None) -> Key:
-    """Load text KEY or Grim FYEK by its contents, not its filename."""
+def loadKey(filePath: Union[Path, str], *, allowErrors=False, warnings=None, strictTracks=True) -> Key:
+    """Load text KEY or Grim FYEK by its contents, not its filename.
+
+    ``strictTracks=False`` keeps text tracks that the engine would still read: tracks numbered
+    outside ``JOINTS``, repeated tracks for one node and more tracks than ``JOINTS``. Retail
+    ``rdKeyframe_LoadEntry`` stores each at its node number without a bound check. Use it to
+    audit such files (``sith.audit.keylint``), not to import or export them.
+    """
     from .keyBinary import kBinaryKeyMagic, readBinaryKey
     with open(filePath, 'rb') as stream:
         if stream.read(len(kBinaryKeyMagic)) == kBinaryKeyMagic:
@@ -58,7 +64,7 @@ def loadKey(filePath: Union[Path, str], *, allowErrors=False, warnings=None) -> 
                 _parse_key_section_markers(tok, key, warnings=warnings if allowErrors else None)
             else:
                 try:
-                    _parse_key_section_keyframe_nodes(tok, key)
+                    _parse_key_section_keyframe_nodes(tok, key, strictTracks=strictTracks)
                 except (AssertionError, TypeError, ValueError, OSError, EOFError) as error:
                     # The parser appends only complete tracks. Never guess where
                     # a damaged record ends or fabricate the unread tail.
@@ -127,10 +133,10 @@ def _parse_key_section_markers(tok: Tokenizer, key: Key, *, warnings=None):
             continue
         key.markers.append(m)
 
-def _parse_key_section_keyframe_nodes(tok: Tokenizer, key: Key):
+def _parse_key_section_keyframe_nodes(tok: Tokenizer, key: Key, *, strictTracks=True):
     tok.assertIdentifier("NODES")
     numNodes = tok.getIntNumber()
-    if not 0 <= numNodes <= key.numJoints:
+    if numNodes < 0 or (strictTracks and numNodes > key.numJoints):
         raise ValueError('KEY node count is outside its joint count')
     indices = set()
     for _ in range(0, numNodes):
@@ -138,9 +144,9 @@ def _parse_key_section_keyframe_nodes(tok: Tokenizer, key: Key):
 
         tok.assertIdentifier("NODE")
         node.idx = tok.getIntNumber()
-        if not 0 <= node.idx < key.numJoints:
+        if strictTracks and not 0 <= node.idx < key.numJoints:
             raise ValueError(f'KEY joint index {node.idx} is outside its joint count')
-        if node.idx in indices:
+        if strictTracks and node.idx in indices:
             raise ValueError(f'Duplicate KEY joint index {node.idx}')
         indices.add(node.idx)
 
