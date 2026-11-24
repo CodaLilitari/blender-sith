@@ -349,6 +349,58 @@ class AuditTests(unittest.TestCase):
         self.assertEqual(report['issue_counts'], {'joint_not_measured': 1})
         self.assertEqual(report['findings'][0]['code'], 'joint_not_measured')
         self.assertFalse(report['joints'][0]['measured'])
+        self.assertEqual(report['joints'][0]['reason'], 'no polygons near the pivot on both sides')
+
+    def test_each_reason_a_joint_cannot_be_measured(self):
+        parts = [box('lower', (-R, -D, -H), (R, D, O)), box('upper', (-R, -D, -O), (R, D, H))]
+        with_empty = model(parts, [('hip', -1, 0, (0, 0, 0), (0, 0, 0)), ('torso', 0, 1, (0, 0, 0), (0, 0, 0)),
+                                   ('empty', 1, -1, (0, 0, H), (0, 0, 0))])
+        # Two boxes round the same centre give no limb axis; no ray reaches a wall 0.005 from the pivot,
+        # since the nearest wall is R = 0.01 away.
+        same = model([box('a', (-R, -D, -H), (R, D, H)), box('b', (-R, -D, -H), (R, D, H))],
+                     [('a', -1, 0, (0, 0, 0), (0, 0, 0)), ('b', 0, 1, (0, 0, 0), (0, 0, 0))])
+        cases = (
+            (with_empty, {'joints': [('torso', 'empty')]}, 'no mesh on the child side'),
+            (with_empty, {'joints': [('empty', 'torso')]}, 'no mesh on the parent side'),
+            (same, {}, 'no limb axis: both sides centre on the same point'),
+            (two_boxes(), {'settings': AnchorSettings(maxRadius=0.005)}, '0 of 16 rays met a wall within maxRadius'),
+        )
+        for m, options, reason in cases:
+            with self.subTest(reason=reason):
+                report = auditArticulation(m, [slide(3 * O)], **options)
+                joint, = report['joints']
+                self.assertEqual((report['status'], joint['measured'], joint['reason']), ('no_joints', False, reason))
+                self.assertEqual(report['findings'], [{'code': 'joint_not_measured', 'joint': joint['label'],
+                                                       'reason': reason}])
+
+    def test_anchors_that_see_daylight_in_the_reference_are_dropped(self):
+        # Open tubes, anchors 0.75 * 0.0098 from the axis. Looking down the axis every anchor sees out
+        # of both open ends at rest, so all 16 are dropped and the joint is not measured.
+        tubes = model([tube('a', -H, O), tube('b', -O, H)],
+                      [('lower', -1, 0, (0, 0, 0), (0, 0, 0)), ('upper', 0, 1, (0, 0, 0), (0, 0, 0))])
+        down = auditArticulation(tubes, [slide(3 * O)], cameras=[(0, 90)])
+        joint, = down['joints']
+        self.assertEqual((down['status'], joint['measured'], joint['reason']),
+                         ('no_joints', False, 'every anchor saw daylight in the reference pose'))
+        self.assertEqual((joint['anchors']['count'], joint['anchors']['dropped']), (0, 16))
+        # At 80 degrees a line climbs 0.02 to a tube's open end while it moves 0.0035 sideways. It
+        # leaves both ends without meeting a wall only for anchors at |sin(angle)| < 0.57 from the
+        # view's plane: the rays at 0, 22.5, 157.5, 180, 202.5 and 337.5 degrees, 6 of 16.
+        steep = auditArticulation(tubes, [slide(3 * O)], cameras=[(0, 80)])
+        joint, = steep['joints']
+        self.assertEqual((joint['measured'], joint['reason']), (True, ''))
+        self.assertEqual((joint['anchors']['count'], joint['anchors']['dropped']), (10, 6))
+        # The 10 kept anchors still measure: they part by the lift, and every line meets a wall.
+        self.assertAlmostEqual(joint['max_separation']['value'], 3 * O, places=15)
+        self.assertEqual((steep['status'], steep['totals']['lines']), ('clean', 0))
+
+    def test_rims_that_do_not_match_give_core_anchors(self):
+        # The tubes' rims are 16 points 0.01 from the axis, a diagonal of 0.028 across, 0.002 apart.
+        for settings in ({'rimMinPoints': 17}, {'rimReach': 0.005}, {'rimMinExtent': 0.03},
+                         {'rimMaxExtent': 0.01}, {'rimMatch': 0.001}):
+            with self.subTest(settings=settings):
+                report = auditArticulation(two_tubes(), [slide(4 * O)], settings=AnchorSettings(**settings))
+                self.assertEqual(report['joints'][0]['anchors']['kind'], 'core')
 
     def test_settings_scale_lengths_only_and_reject_nonsense(self):
         half = AnchorSettings().scaled(0.5)

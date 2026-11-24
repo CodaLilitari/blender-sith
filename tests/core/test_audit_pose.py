@@ -269,6 +269,46 @@ class BlendTests(unittest.TestCase):
         np.testing.assert_allclose(local.positions[1], [3, 0, 0])
         self.assertEqual(local.drivenBy[1], (0,))
 
+    # Node 1 rests at (1, 0, 0) with rotation (0, 170, 0). Each KEY below gives it one delta:
+    # A (2, 0, 0) and pitch +10; B (0, 2, 0) and roll +20; C (0, 0, 4) and yaw -20.
+    def deltas(self):
+        return (key({1: [entry(0, (3, 0, 0), (10, 170, 0))]}, name='a.key'),
+                key({1: [entry(0, (1, 2, 0), (0, 170, 20))]}, name='b.key'),
+                key({1: [entry(0, (1, 0, 4), (0, 150, 0))]}, name='c.key'))
+
+    def test_second_priority_accumulates_under_a_partial_best(self):
+        # B arrives first and is demoted to second when A outranks it; C joins B at the second
+        # priority. Delta: 0.5 A + (1 - 0.5) (0.25 B + 0.5 C); rest weight 1 - 0.5 - 0.75 * 0.5.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(b, 0, weight=0.25, lowPri=1),
+                                            PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(c, 0, weight=0.5, lowPri=1)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.25, 1.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 5.0, 2.5])
+        self.assertAlmostEqual(local.restWeight[1], 0.125)
+        self.assertEqual(local.drivenBy[1], (1, 0, 2))
+
+    def test_a_middle_priority_replaces_the_second(self):
+        # Under A (weight 0.5) B takes the second slot, then C, at a priority between, replaces it.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(b, 0, lowPri=1), PoseLayer(c, 0, lowPri=2)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.0, 2.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 10.0, 0.0])
+        self.assertAlmostEqual(local.restWeight[1], 0.0)
+        self.assertEqual(local.drivenBy[1], (0, 2))
+
+    def test_second_priority_weights_above_one_are_averaged(self):
+        # B and C share the second priority at full weight: their sum, 2, is divided out before
+        # they fill the half A leaves. Delta: 0.5 A + 0.5 (B + C) / 2; nothing is left at rest.
+        a, b, c = self.deltas()
+        local = blendLocalPose(self.model, [PoseLayer(a, 0, weight=0.5, lowPri=3),
+                                            PoseLayer(b, 0, lowPri=1), PoseLayer(c, 0, lowPri=1)])
+        np.testing.assert_allclose(local.positions[1], [1 + 1.0, 0.5, 1.0])
+        np.testing.assert_allclose(local.rotations[1], [5.0, 170 - 5.0, 5.0])
+        self.assertAlmostEqual(local.restWeight[1], 0.0)
+        self.assertEqual(local.drivenBy[1], (0, 1, 2))
+
 
 if __name__ == '__main__':
     unittest.main()

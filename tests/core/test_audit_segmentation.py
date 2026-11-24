@@ -103,17 +103,18 @@ def node(idx, name, parent, mesh, position=(0.0, 0.0, 0.0), rotation=(0.0, 0.0, 
     return n
 
 
-def character(strip=False, shard=False, shards=0):
+def character(strip=False, shard=False, shards=0, inner=False):
     """Torso box at the origin, a head above it and a long right arm hanging beside it.
 
     ``strip``: a flap of torso faces from the top edge out to the arm's outer side and down it, the
     way a cut leaves arm surface in the torso. ``shard``: a loose tetrahedron of torso faces by the
-    end of the arm. ``shards``: that many loose tetrahedra along the arm. Returns the model and the
-    torso face indices of each added feature.
+    end of the arm. ``shards``: that many loose tetrahedra along the arm. ``inner``: a loose flap of
+    arm faces inside the torso on its centre line, from z 0 to 0.02, both sides. Returns the model
+    and the face indices of each added feature (``inner`` in the arm's mesh, the rest in the torso's).
     """
     torso = MeshBuilder()
     body = torso.box((-0.02, -0.01, 0.0), (0.02, 0.01, 0.06))
-    added = {'body': body, 'connect': [], 'hang': [], 'shard': [], 'shards': []}
+    added = {'body': body, 'connect': [], 'hang': [], 'shard': [], 'shards': [], 'inner': []}
     if strip:
         ys = [-0.01, -0.005, 0.0, 0.005, 0.01]
         levels = [0.05, 0.03, 0.01, -0.01]
@@ -131,6 +132,12 @@ def character(strip=False, shard=False, shards=0):
     head.box((-0.008, -0.008, 0.065), (0.008, 0.008, 0.085), n=2)
     arm = MeshBuilder()
     arm.box((0.025, -0.005, -0.025), (0.035, 0.005, 0.055), n=4)
+    if inner:
+        for z0 in (0.0, 0.005, 0.01, 0.015):
+            added['inner'].append(arm.face([(0.0, -0.004, z0), (0.0, 0.004, z0), (0.0, 0.004, z0 + 0.005),
+                                            (0.0, -0.004, z0 + 0.005)]))
+            added['inner'].append(arm.face([(0.0, -0.004, z0), (0.0, -0.004, z0 + 0.005), (0.0, 0.004, z0 + 0.005),
+                                            (0.0, 0.004, z0)]))
     model = Model3do('synthetic.3do')
     geoset = Model3doGeoSet()
     geoset.meshes = [torso.mesh(0, 'torso', material=1), head.mesh(1, 'head', offset=(0.0, 0.0, 0.065)),
@@ -139,6 +146,33 @@ def character(strip=False, shard=False, shards=0):
     model.meshHierarchy = [node(0, 'k_torso', -1, 0), node(1, 'k_head', 0, 1, (0.0, 0.0, 0.065)),
                            node(2, 'k_rshouldr', 0, 2, SHOULDER)]
     return model, added
+
+
+def siblings():
+    """Kyle's waist: hip and torso both hang from a meshless root, with a head on the torso.
+
+    A flap of torso faces (normals forward, +y) hangs from the torso's lower front edge down in
+    front of the hip, 0.002 clear of it: hip surface left in the torso. Returns the model and the
+    flap's face indices in the torso's mesh.
+    """
+    torso = MeshBuilder()
+    torso.box((-0.02, -0.01, 0.001), (0.02, 0.01, 0.06))
+    flap = []
+    for i in range(4):
+        for j in range(3):
+            x0, x1, z0, z1 = -0.02 + 0.01 * i, -0.01 + 0.01 * i, 0.001 - 0.01 * (j + 1), 0.001 - 0.01 * j
+            flap.append(torso.face([(x0, 0.01, z0), (x0, 0.01, z1), (x1, 0.01, z1), (x1, 0.01, z0)]))
+    hip = MeshBuilder()
+    hip.box((-0.02, -0.006, -0.04), (0.02, 0.006, -0.001))
+    head = MeshBuilder()
+    head.box((-0.008, -0.008, 0.065), (0.008, 0.008, 0.085), n=2)
+    model = Model3do('siblings.3do')
+    geoset = Model3doGeoSet()
+    geoset.meshes = [hip.mesh(0, 'hip'), torso.mesh(1, 'torso'), head.mesh(2, 'head', offset=(0.0, 0.0, 0.065))]
+    model.geosets = [geoset]
+    model.meshHierarchy = [node(0, '$$$dummy', -1, -1), node(1, 'k_hip', 0, 0), node(2, 'k_torso', 0, 1),
+                           node(3, 'k_head', 2, 2, (0.0, 0.0, 0.065))]
+    return model, flap
 
 
 def one_mesh(builder, name='mesh.3do'):
@@ -438,6 +472,57 @@ class AuditTests(unittest.TestCase):
         raised = auditSegmentation(model, poses=poses, leverHigh=1.0, separationHigh=0.05)
         self.assertEqual(raised['severity_counts']['high'], 2)
         self.assertEqual(auditSegmentation(model, leverHigh=1.0, separationHigh=0.05)['severity_counts']['high'], 0)
+
+    def test_a_child_piece_left_in_its_parent_is_an_ancestor_overlap(self):
+        # Eight faces of the arm's mesh lie inside the torso. The torso, the arm's parent, claims them:
+        # a child's end in its parent is how pieces overlap at a joint, so this is review, not high.
+        # The lever is the distance from the shoulder to the lowest face centre, (0, 0, 0.0025).
+        model, added = character(inner=True)
+        report = auditSegmentation(model)
+        self.assertEqual(report['severity_counts']['high'], 0)
+        piece, = [f for f in report['findings'] if f['severity'] == 'review']
+        self.assertEqual((piece['code'], piece['part_name'], piece['claimed_by_name'], piece['relation'],
+                          piece['joint_name']), ('stray_island', 'k_rshouldr', 'k_torso', 'ancestor', 'k_rshouldr'))
+        self.assertEqual(piece['meshes'], [{'mesh': 2, 'name': 'arm', 'faces': added['inner']}])
+        self.assertAlmostEqual(piece['lever'], math.hypot(SHOULDER[0], SHOULDER[2] - 0.0025), places=6)
+        # Below leverHigh an ancestor's claim is only info.
+        quiet = auditSegmentation(model, leverHigh=0.07, detail='info')
+        self.assertEqual(quiet['severity_counts']['review'], 0)
+        piece, = [f for f in quiet['findings'] if f['code'] == 'stray_island']
+        self.assertEqual((piece['severity'], piece['relation']), ('info', 'ancestor'))
+
+    def test_sibling_parts_under_a_meshless_root_claim_as_other(self):
+        # The flap is nearer the hip's bone (down from the waist) than the torso's (up to the head).
+        # Hip and torso are siblings, so the relation is 'other' and the joint is the hip's. The lever
+        # runs from the waist to the lowest flap centres, (+-0.015, 0.01, -0.024).
+        model, flap = siblings()
+        report = auditSegmentation(model, detail='info')
+        found, = report['findings']
+        self.assertEqual((found['code'], found['part_name'], found['claimed_by_name'], found['relation'],
+                          found['joint_name'], found['severity']),
+                         ('foreign_surface', 'k_torso', 'k_hip', 'other', 'k_hip', 'review'))
+        self.assertEqual(found['meshes'], [{'mesh': 1, 'name': 'torso', 'faces': flap}])
+        lever = math.sqrt(0.015 ** 2 + 0.01 ** 2 + 0.024 ** 2)
+        self.assertAlmostEqual(found['lever'], lever, places=6)
+        self.assertEqual(found['facing'], 0.0)
+        self.assertEqual(auditSegmentation(model, leverHigh=0.025)['status'], 'suspect')
+        low = auditSegmentation(model, leverReview=0.05, detail='info')
+        self.assertEqual((low['status'], low['findings'][0]['severity']), ('clean', 'info'))
+
+    def test_large_islands_and_short_levers_are_info(self):
+        model, added = character(strip=True, shard=True)
+        # With islandShare 0 every island counts as large: the shard is info, not high.
+        large = auditSegmentation(model, islandShare=0.0, detail='info')
+        island, = [f for f in large['findings'] if f['code'] == 'stray_island']
+        self.assertEqual((island['severity'], island['relation']), ('info', 'descendant'))
+        self.assertGreater(island['share'], 0.0)
+        # Below leverReview a region the arm (a descendant) claims is info too.
+        short = auditSegmentation(model, leverHigh=1.0, leverReview=0.9, detail='info')
+        self.assertEqual(short['status'], 'clean')
+        strip, = [f for f in short['findings'] if f['code'] == 'foreign_surface']
+        self.assertEqual((strip['severity'], strip['relation'], strip['claimed_by_name']),
+                         ('info', 'descendant', 'k_rshouldr'))
+        self.assertLess(strip['lever'], 0.9)
 
     def test_findings_are_bounded_and_counted(self):
         model, added = character(shards=40)
