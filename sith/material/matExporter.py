@@ -80,18 +80,22 @@ def _dither_mask(material, index, width, height):
 
 
 def prepareMatExports(materials, directory, encoding, palettePath='', *, overwrite=False,
-                      generateMipmaps=True, grim=False, warnings=None, dither=False):
+                      generateMipmaps=True, grim=False, warnings=None, dither=False, avoidFullbright=False):
     """Encode material cels or individual images before touching output files.
 
     ``dither`` applies ordered dithering to Indexed output (see ``encodeMat``). A material
     can limit it per cel with an image in its ``sith_dither_mask_<cel>`` property: texels
     whose red value is at least 0.5 are dithered. The mask must match the cel's size.
+    ``avoidFullbright`` keeps the palette entries the CMP never darkens out of Indexed
+    output (``encodeMat``); it needs a JKDF2/MOTS CMP with its light table.
     """
     directory = Path(directory)
     if directory.is_symlink() or (getattr(directory, 'is_junction', lambda: False)()):
         raise ValueError('MAT output directory cannot be a symbolic link or junction')
     if dither and encoding != 'INDEXED':
         raise ValueError('Dithering applies only to Indexed MAT encoding')
+    if avoidFullbright and encoding != 'INDEXED':
+        raise ValueError('Avoiding fullbright colours applies only to Indexed MAT encoding')
     named = {}
     for name, material in materials:
         _filename(name)
@@ -142,7 +146,7 @@ def prepareMatExports(materials, directory, encoding, palettePath='', *, overwri
             mask = _dither_mask(material, index, width, height) if dither else None
             cels.append(MatCel(width, height, pixels, mask))
         result.append((target, encodeMat(cels, encoding, palette, generateMipmaps=generateMipmaps,
-                                        grim=grim, dither=dither)))
+                                        grim=grim, dither=dither, avoidFullbright=avoidFullbright)))
     return result
 
 
@@ -286,11 +290,12 @@ def publishExportFiles(files, staging, *, warnings=None):
 
 
 def exportMat(source, path, encoding='RGBA32', palettePath='', *, overwrite=False,
-              generateMipmaps=True, grim=False, warnings=None, dither=False):
+              generateMipmaps=True, grim=False, warnings=None, dither=False, avoidFullbright=False):
     """Export one image or a material's bound cels; return False if kept existing.
 
     ``dither`` is passed to ``prepareMatExports``: Indexed only, limited per cel by a
-    material's ``sith_dither_mask_<cel>`` image when present.
+    material's ``sith_dither_mask_<cel>`` image when present. So is ``avoidFullbright``:
+    Indexed only, with a CMP that has its light table.
     """
     import bpy
 
@@ -312,7 +317,7 @@ def exportMat(source, path, encoding='RGBA32', palettePath='', *, overwrite=Fals
 
     textures = prepareMatExports([(destination.name, source)], destination.parent, encoding,
                                  palette, overwrite=overwrite, generateMipmaps=generateMipmaps,
-                                 grim=grim, warnings=warnings, dither=dither)
+                                 grim=grim, warnings=warnings, dither=dither, avoidFullbright=avoidFullbright)
     if not textures:
         return False
     staging = Path(tempfile.mkdtemp(prefix='sith-mat-export-'))

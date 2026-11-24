@@ -9,6 +9,7 @@ import bpy
 import numpy as np
 
 from app.support import SceneTestCase
+from core.test_mat_dither import levels
 from core.test_mat_writer import decode, expected_pixels
 from fixtures import cmp_bytes
 from sith import app
@@ -25,6 +26,12 @@ def gradient(width, height):
     y, x = np.mgrid[0:height, 0:width]
     rgb = np.stack((60 + 15 * x, 70 + 12 * y, 50 + 5 * (x + y)), axis=-1) / 255
     return np.concatenate((rgb, np.ones((height, width, 1))), axis=-1).astype(np.float32)
+
+
+# A light table for the fixture palette that draws every even entry alike at all 64 levels and
+# darkens the odd ones to index 0: the even entries are fullbright.
+EVEN = set(range(0, 256, 2))
+LIGHT = [[i if i % 2 == 0 or level == 63 else 0 for i in range(256)] for level in range(64)]
 
 
 class RetailExportTests(SceneTestCase):
@@ -84,7 +91,7 @@ class RetailExportTests(SceneTestCase):
                       overwrite_textures=False, texture_mipmaps=True, texture_directory='mat',
                       detail_levels=1, fail_over_budget=False, texture_editions=False,
                       texture_directory_8bit='mat8', texture_directory_16bit='mat16', texture_dither=False,
-                      report=lambda kinds, message: reports.append((kinds, message)))
+                      texture_avoid_fullbright=False, report=lambda kinds, message: reports.append((kinds, message)))
         values.update(options)
         return app.ExportModel3do.execute(SimpleNamespace(**values), bpy.context), reports
 
@@ -97,12 +104,13 @@ class RetailExportTests(SceneTestCase):
         properties = bpy.ops.export_scene.sith_3do.get_rna_type().properties
         self.assertEqual((properties['detail_levels'].default, properties['detail_levels'].hard_min,
                           properties['detail_levels'].hard_max), (1, 1, 4))
-        for name in ('fail_over_budget', 'texture_editions', 'texture_dither'):
+        for name in ('fail_over_budget', 'texture_editions', 'texture_dither', 'texture_avoid_fullbright'):
             with self.subTest(name=name):
                 self.assertFalse(properties[name].default)
         self.assertEqual((properties['texture_directory_8bit'].default, properties['texture_directory_16bit'].default),
                          ('mat8', 'mat16'))
-        self.assertFalse(bpy.ops.export_material.sith_mat.get_rna_type().properties['dither'].default)
+        for name in ('dither', 'avoid_fullbright'):
+            self.assertFalse(bpy.ops.export_material.sith_mat.get_rna_type().properties[name].default)
         warnings = []
         self.export(warnings=warnings)
         model, _ = load3do(self.path)
@@ -292,6 +300,72 @@ class RetailExportTests(SceneTestCase):
         self.assertEqual(result, {'FINISHED'}, reports)
         self.assertFalse((self.folder / 'mat8').exists())
 
+    def stored(self, *parts):
+        """Base-level palette indices of a written 8-bit MAT, top row first."""
+        return levels(self.folder.joinpath(*parts).read_bytes())[0]
+
+    def test_fullbright_entries_stay_where_nearest_colour_puts_them_or_out_when_asked(self):
+        lit = self.folder / 'lit.cmp'
+        lit.write_bytes(cmp_bytes(light=LIGHT))
+        self.use_gradient()
+        options = dict(exportTextures=True, textureEditions=True, texturePalette=str(lit), overwriteTextures=True,
+                       generateMipmaps=False)
+        self.export(**options)
+        nearest, color = self.stored('mat8', 'test.mat'), (self.folder / 'mat16/test.mat').read_bytes()
+        self.assertTrue(set(nearest.ravel()) & EVEN)   # Nearest colour uses fullbright entries here.
+        # The same palette without its light table: a pattern adds a fullbright entry.
+        self.export(textureDither=True, **dict(options, texturePalette=str(self.palette_path)))
+        bare = self.stored('mat8', 'test.mat')
+        self.assertTrue(np.any(np.isin(bare, list(EVEN)) & ~np.isin(nearest, list(EVEN))))
+        # With it, dithering never adds one: its fullbright texels are exactly those of nearest colour.
+        self.export(textureDither=True, **options)
+        dithered = self.stored('mat8', 'test.mat')
+        glowing = np.isin(dithered, list(EVEN))
+        np.testing.assert_array_equal(glowing, np.isin(nearest, list(EVEN)))
+        np.testing.assert_array_equal(dithered[glowing], nearest[glowing])
+        self.assertTrue(np.any(dithered != nearest))   # It still dithers.
+        # Avoid Fullbright Colours keeps them out of nearest colour and dithering alike, in the
+        # 8-bit edition only.
+        for dither in (False, True):
+            with self.subTest(dither=dither):
+                self.export(textureAvoidFullbright=True, textureDither=dither, **options)
+                self.assertFalse(set(self.stored('mat8', 'test.mat').ravel()) & EVEN)
+                self.assertEqual((self.folder / 'mat16/test.mat').read_bytes(), color)
+        result, reports = self.operator(export_textures=True, texture_editions=True, texture_cmp_file=str(lit),
+                                        texture_avoid_fullbright=True, overwrite_textures=True)
+        self.assertEqual(result, {'FINISHED'}, reports)
+        self.assertFalse(set(self.stored('mat8', 'test.mat').ravel()) & EVEN)
+
+    def test_avoid_fullbright_needs_indexed_output_and_a_light_table(self):
+        self.use_gradient()
+        self.path.write_bytes(b'previous model')
+        with self.assertRaisesRegex(ValueError, 'Indexed'):
+            self.export(exportTextures=True, textureEncoding='RGBA32', textureAvoidFullbright=True)
+        # The fixture CMP ends after its palette.
+        with self.assertRaisesRegex(ValueError, 'light table'):
+            self.export(exportTextures=True, textureEditions=True, texturePalette=str(self.palette_path),
+                        textureAvoidFullbright=True)
+        self.assertEqual(self.path.read_bytes(), b'previous model')
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ['model.3do', 'test.cmp'])
+        result, reports = self.operator(export_textures=True, texture_encoding='RGBA32', texture_avoid_fullbright=True)
+        self.assertEqual(result, {'FINISHED'}, reports)   # Hidden for RGBA32, so ignored.
+        self.assertEqual(self.mat('mat', 'test.mat')[0].color_info.bpp, 32)
+
+    def test_standalone_mat_export_avoids_fullbright_entries(self):
+        lit = self.folder / 'lit.cmp'
+        lit.write_bytes(cmp_bytes(light=LIGHT))
+        self.use_gradient()
+        target = self.folder / 'standalone.mat'
+        self.assertTrue(exportMat(self.material, target, 'INDEXED', str(lit), generateMipmaps=False))
+        self.assertTrue(set(self.stored('standalone.mat').ravel()) & EVEN)
+        with bpy.context.temp_override(sith_mat_export_source=self.material):
+            self.assertEqual(bpy.ops.export_material.sith_mat(filepath=str(target), encoding='INDEXED', cmp_file=str(lit),
+                                                              avoid_fullbright=True, generate_mipmaps=False,
+                                                              overwrite_existing=True), {'FINISHED'})
+        self.assertFalse(set(self.stored('standalone.mat').ravel()) & EVEN)
+        with self.assertRaisesRegex(ValueError, 'Indexed'):
+            exportMat(self.material, self.folder / 'packed.mat', 'RGB565', avoidFullbright=True)
+
     def test_standalone_mat_export_dithers_indexed_output(self):
         self.use_gradient()
         target = self.folder / 'standalone.mat'
@@ -322,12 +396,14 @@ class RetailExportTests(SceneTestCase):
         self.assertIn('texture_editions', names)
         self.assertNotIn('texture_dither', names)
         self.assertNotIn('fail_over_budget', shown(version='Version2_3'))
+        self.assertNotIn('texture_avoid_fullbright', names)
         names = shown(texture_editions=True)
         self.assertEqual([name in names for name in ('texture_directory_8bit', 'texture_directory_16bit',
-                                                     'texture_cmp_file', 'texture_dither', 'texture_directory',
-                                                     'texture_encoding')],
-                         [True, True, True, True, False, False])
+                                                     'texture_cmp_file', 'texture_dither', 'texture_avoid_fullbright',
+                                                     'texture_directory', 'texture_encoding')],
+                         [True, True, True, True, True, False, False])
         self.assertIn('texture_dither', shown(texture_encoding='INDEXED'))
+        self.assertIn('texture_avoid_fullbright', shown(texture_encoding='INDEXED'))
         names = shown(version='GrimFandango', texture_encoding='INDEXED', texture_editions=True)
         self.assertNotIn('texture_editions', names)
         self.assertNotIn('texture_directory_8bit', names)
@@ -337,3 +413,4 @@ class RetailExportTests(SceneTestCase):
             app.ExportMat.draw(SimpleNamespace(layout=layout, target='SITH', encoding=encoding), None)
             names = [call.args[1] for call in layout.mock_calls if call[0].endswith('prop')]
             self.assertEqual('dither' in names, encoding == 'INDEXED')
+            self.assertEqual('avoid_fullbright' in names, encoding == 'INDEXED')

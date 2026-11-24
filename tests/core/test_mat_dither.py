@@ -6,8 +6,9 @@ import unittest
 
 import numpy as np
 
-from sith.material.matWriter import (MatCel, _dither_choices, encodeMat, kBayer4, kDitherCandidates,
-                                     kDitherContrast)
+from sith.material.cmp import ColorMap
+from sith.material.matWriter import (MatCel, _dither_choices, encodeMat, fullbrightIndices, kBayer4,
+                                     kDitherCandidates, kDitherContrast)
 
 
 def ramps():
@@ -25,6 +26,30 @@ def two_greys():
     palette[3], palette[4] = (100, 100, 100), (140, 140, 140)
     palette[200] = (0, 255, 0)
     return palette
+
+
+def with_light(palette, fullbright=()):
+    """A ColorMap of ``palette`` with a light table that darkens every entry but the fullbright ones.
+
+    Level 63 (full light) draws each entry as itself and lower levels draw it as index 0, so
+    index 0 looks the same at every level and is fullbright too, as in the stock CMP. Every
+    level draws each entry of ``fullbright`` as itself.
+    """
+    result = ColorMap()
+    result.palette = [tuple(int(c) for c in entry) for entry in np.asarray(palette)]
+    light = np.zeros((64, 256), dtype=np.uint8)
+    light[63] = np.arange(256)
+    for index in fullbright:
+        light[:, index] = index
+    result.lightLevels = light
+    return result
+
+
+def lit_greys():
+    """Grey 100 at index 3 and grey 40 at index 5 darken; grey 140 at index 4 and black at 0 are fullbright."""
+    palette = two_greys()
+    palette[0], palette[5] = (0, 0, 0), (40, 40, 40)
+    return with_light(palette, fullbright=(4,))
 
 
 def skin(height, width):
@@ -57,14 +82,17 @@ def base(cels, palette, **options):
     return levels(encodeMat(cels, 'INDEXED', palette, generateMipmaps=False, **options))[0]
 
 
-def brute_force(colors, palette, first):
+def brute_force(colors, palette, first, allowed=None):
     """Enumerate every (majority, minority, share of 16) among the candidates; documented tie order."""
     weight, scale = kDitherContrast
     palette = np.asarray(palette, dtype=np.int64)
+    pool = np.arange(first, len(palette))
+    if allowed is not None:
+        pool = pool[np.asarray(allowed)[first:]]
     result = []
     for color in np.asarray(colors, dtype=np.int64):
-        distance = ((color - palette[first:]) ** 2).sum(axis=1)
-        candidates = np.sort(np.argsort(distance, kind='stable')[:kDitherCandidates] + first)
+        distance = ((color - palette[pool]) ** 2).sum(axis=1)
+        candidates = np.sort(pool[np.argsort(distance, kind='stable')[:kDitherCandidates]])
         a, b, share = (grid.ravel() for grid in
                        np.meshgrid(candidates, candidates, np.arange(8, 17), indexing='ij'))
         span = ((palette[a] - palette[b]) ** 2).sum(axis=1)
@@ -120,11 +148,13 @@ class DitherTests(unittest.TestCase):
         colors = np.stack(((steps * 97 + 13) % 256, (steps * 59 + 101) % 256, (steps * 23 + 7) % 256), -1)
         colors = np.concatenate((colors, [(0, 0, 0), (255, 255, 255), (120, 120, 120), (230, 175, 150)]))
         duplicated = np.repeat(ramps()[::16], 16, axis=0)  # Equal entries at different indices.
+        allowed = np.arange(256) % 3 != 0  # Entries a light table could make fullbright, left out.
         for name, palette in (('ramps', ramps()), ('greys', two_greys()), ('duplicates', duplicated)):
             for first in (0, 1):
-                with self.subTest(palette=name, first=first):
-                    np.testing.assert_array_equal(_dither_choices(colors, palette, first),
-                                                  brute_force(colors, palette, first))
+                for mask in (None, allowed):
+                    with self.subTest(palette=name, first=first, allowed=mask is not None):
+                        np.testing.assert_array_equal(_dither_choices(colors, palette, first, mask),
+                                                      brute_force(colors, palette, first, mask))
 
     def test_a_colour_halfway_between_two_entries_alternates_them_evenly(self):
         stored = base([MatCel(8, 8, flat((120, 120, 120), 8, 8))], two_greys(), dither=True)
@@ -211,6 +241,104 @@ class DitherTests(unittest.TestCase):
         for mask in (np.ones(3), [1, np.nan, 1, 1], np.ones(4, dtype=complex)):
             with self.subTest(mask=mask), self.assertRaises(ValueError):
                 encodeMat([MatCel(2, 2, pixels, mask)], 'INDEXED', two_greys(), dither=True)
+
+
+class FullbrightTests(unittest.TestCase):
+    """Entries the CMP's light table never darkens (stock dflt.cmp: 0 to 31 and 63) glow in shadow."""
+
+    def test_fullbright_entries_are_those_every_light_level_draws_alike(self):
+        self.assertEqual(fullbrightIndices(lit_greys()), [0, 4])
+        palette = with_light(ramps(), fullbright=range(16, 32))
+        palette.lightLevels[:, 40] = 7     # Drawn as another entry, but the same one at every level.
+        self.assertEqual(fullbrightIndices(palette), [0, *range(16, 32), 40])
+        self.assertIsNone(fullbrightIndices(ramps()))   # A bare palette has no light table.
+        palette.lightLevels = palette.lightLevels[:32]
+        with self.assertRaisesRegex(ValueError, 'light table'):
+            fullbrightIndices(palette)
+
+    def test_dithering_never_adds_a_fullbright_entry_that_nearest_colour_does_not_use(self):
+        lit, bare = lit_greys(), np.asarray(lit_greys().palette)
+        tile = np.tile(kBayer4, (2, 2))
+        # Grey 118: nearest is 100 (index 3, not fullbright). Without the light table the pattern
+        # mixes in fullbright 140 (index 4) at a share of 7/16; with it, 4 is no candidate and
+        # nothing else reaches 118, so the texels stay 100.
+        grey = [MatCel(8, 8, flat((118,) * 3, 8, 8))]
+        np.testing.assert_array_equal(base(grey, bare, dither=True), np.where(tile < 9, 3, 4))
+        np.testing.assert_array_equal(base(grey, lit, dither=True), np.full((8, 8), 3))
+        # Grey 122: nearest is fullbright 140 (index 4). Without the table it dithers 9/16 of 140
+        # with 100; with it the texels keep their nearest entry, solid.
+        grey = [MatCel(8, 8, flat((122,) * 3, 8, 8))]
+        np.testing.assert_array_equal(base(grey, bare, dither=True), np.where(tile < 9, 4, 3))
+        np.testing.assert_array_equal(base(grey, lit, dither=True), np.full((8, 8), 4))
+
+    def test_on_random_colours_dithered_fullbright_texels_are_exactly_the_nearest_ones(self):
+        palette = with_light(ramps(), fullbright=range(16, 32))
+        full = fullbrightIndices(palette)
+        rgb = np.random.default_rng(3).integers(0, 256, size=(64, 64, 3))
+        cels = [MatCel(64, 64, np.concatenate((rgb / 255, np.ones((64, 64, 1))), axis=2))]
+        nearest = levels(encodeMat(cels, 'INDEXED', palette))
+        dithered = levels(encodeMat(cels, 'INDEXED', palette, dither=True))
+        bare = levels(encodeMat(cels, 'INDEXED', ramps(), dither=True))
+        # The fault, without the light table: patterns add fullbright texels where nearest had none.
+        self.assertTrue(np.any(np.isin(bare[0], full) & ~np.isin(nearest[0], full)))
+        for level, (near, ditherLevel) in enumerate(zip(nearest, dithered)):
+            with self.subTest(level=level):
+                glowing = np.isin(ditherLevel, full)
+                np.testing.assert_array_equal(glowing, np.isin(near, full))
+                np.testing.assert_array_equal(ditherLevel[glowing], near[glowing])
+        self.assertTrue(np.any(dithered[0] != nearest[0]))  # It still dithers.
+
+    def test_avoid_fullbright_keeps_them_out_of_nearest_colour_and_dithering(self):
+        lit = lit_greys()
+        for options in ({}, {'dither': True}):
+            with self.subTest(**options):
+                # 122 is nearest to fullbright 140; the closest other entry is 100 (index 3).
+                stored = base([MatCel(8, 8, flat((122,) * 3, 8, 8))], lit, avoidFullbright=True, **options)
+                np.testing.assert_array_equal(stored, np.full((8, 8), 3))
+                # Near-black is nearest to fullbright black (index 0); the closest other is 40 (index 5).
+                stored = base([MatCel(4, 4, flat((10,) * 3, 4, 4))], lit, avoidFullbright=True, **options)
+                np.testing.assert_array_equal(stored, np.full((4, 4), 5))
+        self.assertEqual(set(base([MatCel(4, 4, flat((10,) * 3, 4, 4))], lit).ravel()), {0})
+        # Transparent texels keep index 0, the transparency key, not a colour.
+        pixels = flat((122,) * 3, 4, 4)
+        pixels[:2, :2, 3] = 0.0
+        stored = base([MatCel(4, 4, pixels)], lit, avoidFullbright=True, dither=True)
+        self.assertEqual(set(stored[-2:, :2].ravel()), {0})
+        self.assertEqual(set(stored[:2].ravel()) | set(stored[-2:, 2:].ravel()), {3})
+
+    def test_without_the_option_or_dithering_a_light_table_changes_no_byte(self):
+        # The release 1.2.0 encodings of test_default_indexed_output_is_byte_identical_to_release_1_2_0,
+        # with a light table that makes the stock fullbright indices fullbright.
+        i = np.arange(256)
+        palette = with_light(np.stack(((i * 37) % 256, (i * 91 + 17) % 256, (i * 53 + 101) % 256), -1),
+                             fullbright=[*range(32), 63])
+        y, x = np.mgrid[0:16, 0:24]
+        rgba = np.stack(((x * 11 + y * 3) % 256, (x * 5 + y * 13 + 40) % 256,
+                         (x * 7 + y * 17 + 90) % 256, np.full_like(x, 255)), -1) / 255.0
+        holes = rgba.copy()
+        holes[2:4, 3:7, 3] = 0.0
+        cels = [MatCel(24, 16, rgba), MatCel(24, 16, holes), MatCel(5, 3, rgba[:3, :5])]
+        expected = (({}, '87170ce86bdcc8ace498e6d892ea472360be7f1d49d2542b422946b6846bb4c8'),
+                    ({'generateMipmaps': False}, '19b91cccd9ed75eefabecc5c89ba2343863acbef8fd7c7babd2473ebb609ff36'),
+                    ({'grim': True}, '5f5cb9773086440269b8be3daeae5dcab79bc4f9ae90c7bbe513503a68fa39d2'))
+        for options, digest in expected:
+            with self.subTest(**options):
+                data = encodeMat(cels, 'INDEXED', palette, avoidFullbright=False, **options)
+                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+        self.assertTrue(set(fullbrightIndices(palette)) & set(levels(encodeMat(cels[:1], 'INDEXED', palette))[0].ravel()))
+
+    def test_invalid_avoid_fullbright_requests_reject(self):
+        pixels = flat((120, 120, 120), 2, 2)
+        with self.assertRaisesRegex(ValueError, 'Indexed'):
+            encodeMat([MatCel(2, 2, pixels)], 'RGB565', avoidFullbright=True)
+        without = with_light(two_greys())
+        without.lightLevels = None   # As loaded from a CMP that ends after its palette.
+        for palette in (two_greys(), without):
+            with self.subTest(palette=type(palette).__name__), self.assertRaisesRegex(ValueError, 'light table'):
+                encodeMat([MatCel(2, 2, pixels)], 'INDEXED', palette, avoidFullbright=True)
+        every = with_light(two_greys(), fullbright=range(256))
+        with self.assertRaisesRegex(ValueError, 'fullbright'):
+            encodeMat([MatCel(2, 2, pixels)], 'INDEXED', every, avoidFullbright=True)
 
 
 if __name__ == '__main__':

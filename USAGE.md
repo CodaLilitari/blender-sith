@@ -113,7 +113,8 @@ export/
 | **8-bit and 16-bit Editions** | When enabled, write every MAT twice with the same name: Indexed with the **ColorMap File** into the 8-bit folder and RGB 565 into the 16-bit folder. Replaces **MAT Directory** and **Encoding**. Off by default; hidden for Grim. |
 | **8-bit MAT Directory** | Folder for the Indexed edition; default `mat8` beside the 3DO. Shown with editions. |
 | **16-bit MAT Directory** | Folder for the RGB 565 edition; default `mat16` beside the 3DO. It must differ from the 8-bit folder, also when case is ignored and through links. Shown with editions. |
-| **Dither Indexed Textures** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color, such as skin. Off by default; shown for Indexed and editions. |
+| **Dither Indexed Textures** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color, such as skin. A pattern never adds a [fullbright](#fullbright-colors) color. Off by default; shown for Indexed and editions. |
+| **Avoid Fullbright Colours** | When enabled, Indexed textures use no [fullbright](#fullbright-colors) color, so they take shadow everywhere. Needs a CMP with its light table, such as the game's `dflt.cmp`. Off by default; shown for Indexed and editions. |
 
 Use **Indexed** for the original JKDF2, MOTS and DroidWorks engines. Grim requires
 Indexed and a CMP. A `//` palette path is relative to the blend file.
@@ -135,6 +136,21 @@ only part of a texture, such as the skin, add an Image custom property named
 mask is white (red channel 0.5 or more) may dither; the rest use the nearest color.
 The mask must have the same size as the texture. See the
 [material notes](docs/audits/materials.md).
+
+#### Fullbright colors
+
+The game draws 8-bit textures through the CMP's light table, which darkens each
+palette color in shadow. Some entries are fullbright: the table draws them the
+same at every light level, so they glow in shadow. In the stock `dflt.cmp` they
+are entries 0 to 31 and 63: pure greens, reds, yellows, oranges, whites, pale
+blues and a blue for lights and effects, and black. Dithering never adds a
+fullbright color that nearest color would not use; where nearest color picks
+one, the texel keeps it. Nearest color still picks one for some saturated
+colors, such as a bright red. **Avoid Fullbright Colours** keeps them out of the
+Indexed textures entirely, for skin and cloth that must take shadow. It applies
+to every texture of the export: export a texture meant to glow, such as eyes,
+separately without it. The 16-bit edition is not affected. See the
+[fullbright notes](docs/audits/materials.md#fullbright-entries).
 
 Materials export their image textures and bound animation cels, not procedural
 shaders or preview lighting. Bake procedural textures to images first.
@@ -286,7 +302,8 @@ Or use the **Material Specials** dropdown beside the slots to export the active 
 | **Target** | **Standard** for ordinary Sith MATs; **Grim Fandango** for Grim-compatible indexed output. Standard is the default. |
 | **Encoding** | Choose from the six encodings below. Defaults to RGBA32; fixed to Indexed for Grim. |
 | **ColorMap File** | Use this CMP palette for Indexed encoding; shown for Indexed only. Relative paths are beside this MAT; `//` paths are relative to the blend file. |
-| **Dither** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color. Off by default; shown for Indexed only. A material's `sith_dither_mask_<cel>` image limits it. |
+| **Dither** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color. Off by default; shown for Indexed only. A material's `sith_dither_mask_<cel>` image limits it. A pattern never adds a [fullbright](#fullbright-colors) color. |
+| **Avoid Fullbright Colours** | When enabled, use no [fullbright](#fullbright-colors) color, so the texture takes shadow everywhere. Needs a CMP with its light table. Off by default; shown for Indexed only. |
 | **Generate Mipmaps** | When enabled, create smaller texture levels down to 1x1. On by default; hidden for Grim, which stores only the base image. |
 | **Overwrite Existing MAT** | When enabled, allow replacing the existing MAT, with save-dialog confirmation. Off by default. |
 

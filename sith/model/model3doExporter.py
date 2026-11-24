@@ -36,7 +36,7 @@ kDefaultVertexColor = Vector4f(0.0, 0.0, 0.0, 1.0)
 kHNDefaultFlags     = 0
 kHNDefaultType      = 0
 
-def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat', detailLevels=1, failOverBudget=False, textureDither=False, textureEditions=False, textureDirectory8bit='mat8', textureDirectory16bit='mat16'):
+def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat', detailLevels=1, failOverBudget=False, textureDither=False, textureEditions=False, textureDirectory8bit='mat8', textureDirectory16bit='mat16', textureAvoidFullbright=False):
     """Build the resource from a Blender model, then write the requested version.
 
     ``detailLevels`` writes that many identical geosets, 1 to 4 (``setDetailLevels``).
@@ -49,7 +49,9 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
     Both folders resolve like ``textureDirectory`` and must be different folders: the same
     path in another case, or two paths to one folder, is refused (``_same_folder``, and again
     in ``publishExportFiles``). They are published with the model in one step.
-    ``textureDither`` dithers Indexed output (``encodeMat``).
+    ``textureDither`` dithers Indexed output (``encodeMat``). ``textureAvoidFullbright`` keeps
+    the palette entries the CMP never darkens out of Indexed output (``encodeMat``'s
+    ``avoidFullbright``). Both apply to the 8-bit edition only.
     """
     with BenchmarkMeter(' done in {:.4f} sec.'):
         print("exporting 3DO: %r..." % (path), end="")
@@ -58,6 +60,8 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
             raise ValueError('8-bit and 16-bit MAT editions are for JKDF2/MOTS; Grim Fandango uses Indexed MATs only')
         if exportTextures and textureDither and not textureEditions and textureEncoding != 'INDEXED':
             raise ValueError('Dithering applies to Indexed textures; select Indexed encoding or both editions')
+        if exportTextures and textureAvoidFullbright and not textureEditions and textureEncoding != 'INDEXED':
+            raise ValueError('Avoiding fullbright colours applies to Indexed textures; select Indexed encoding or both editions')
 
         bpy.path.ensure_ext(path, '.3do')
         model_name = os.path.basename(path)
@@ -98,12 +102,13 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
             colorFolder = _texture_folder(textureDirectory16bit, destination, 'mat16')
             if _same_folder(indexedFolder, colorFolder):
                 raise ValueError('The 8-bit and 16-bit MAT directories must differ: both editions use the same file names')
-            textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither, **options)
+            textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither,
+                                          avoidFullbright=textureAvoidFullbright, **options)
                         + prepareMatExports(materials, colorFolder, 'RGB565', '', **options))
         else:
             textures = prepareMatExports(materials, _texture_folder(textureDirectory, destination, 'mat'),
                                          textureEncoding, palette, grim=version == Model3doFileFormat.GrimFandango,
-                                         dither=textureDither, **options)
+                                         dither=textureDither, avoidFullbright=textureAvoidFullbright, **options)
         staging = Path(tempfile.mkdtemp(prefix='.sith-export-', dir=destination.parent))
         keepRecovery = False
         try:
