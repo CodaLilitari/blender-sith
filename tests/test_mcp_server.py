@@ -35,18 +35,22 @@ def grid(size):
     return vertices, quads
 
 
-def model_text(meshes, nodes):
-    """meshes: [(name, vertices, polygons)]; nodes: [(name, parent, mesh, position)] -> 3DO 2.1 text."""
+def model_text(meshes, nodes, geosets=1):
+    """meshes: [(name, vertices, polygons)]; nodes: [(name, parent, mesh, position)] -> 3DO 2.1 text.
+
+    ``geosets`` writes that many identical geosets of the meshes."""
     lines = ["# Synthetic test model", "SECTION: HEADER", "3DO 2.1", "SECTION: MODELRESOURCE", "MATERIALS 0",
-             "SECTION: GEOMETRYDEF", "RADIUS 1", "INSERT OFFSET 0 0 0", "GEOSETS 1", "GEOSET 0", f"MESHES {len(meshes)}"]
-    for m, (name, vertices, polygons) in enumerate(meshes):
-        lines += [f"MESH {m}", f"NAME {name}", "RADIUS 1", "GEOMETRYMODE 4", "LIGHTINGMODE 3", "TEXTUREMODE 3",
-                  f"VERTICES {len(vertices)}"]
-        lines += [f"{i}: {x!r} {y!r} {z!r} 0" for i, (x, y, z) in enumerate(vertices)]
-        lines += ["TEXTURE VERTICES 1", "0: 0 0", "VERTEX NORMALS"] + [f"{i}: 0 0 1" for i in range(len(vertices))]
-        lines += [f"FACES {len(polygons)}"]
-        lines += [f"{i}: -1 0 4 3 3 0 {len(p)} " + " ".join(f"{v},0" for v in p) for i, p in enumerate(polygons)]
-        lines += ["FACE NORMALS"] + [f"{i}: 0 0 1" for i in range(len(polygons))]
+             "SECTION: GEOMETRYDEF", "RADIUS 1", "INSERT OFFSET 0 0 0", f"GEOSETS {geosets}"]
+    for geoset in range(geosets):
+        lines += [f"GEOSET {geoset}", f"MESHES {len(meshes)}"]
+        for m, (name, vertices, polygons) in enumerate(meshes):
+            lines += [f"MESH {m}", f"NAME {name}", "RADIUS 1", "GEOMETRYMODE 4", "LIGHTINGMODE 3", "TEXTUREMODE 3",
+                      f"VERTICES {len(vertices)}"]
+            lines += [f"{i}: {x!r} {y!r} {z!r} 0" for i, (x, y, z) in enumerate(vertices)]
+            lines += ["TEXTURE VERTICES 1", "0: 0 0", "VERTEX NORMALS"] + [f"{i}: 0 0 1" for i in range(len(vertices))]
+            lines += [f"FACES {len(polygons)}"]
+            lines += [f"{i}: -1 0 4 3 3 0 {len(p)} " + " ".join(f"{v},0" for v in p) for i, p in enumerate(polygons)]
+            lines += ["FACE NORMALS"] + [f"{i}: 0 0 1" for i in range(len(polygons))]
     lines += ["SECTION: HIERARCHYDEF", f"HIERARCHY NODES {len(nodes)}"]
     for i, (name, parent, mesh, (x, y, z)) in enumerate(nodes):
         children = [j for j, node in enumerate(nodes) if node[1] == i]
@@ -609,6 +613,23 @@ class AuditJobTests(unittest.TestCase):
         self.assertEqual(full["budget"]["geosets"][0]["vertices"], 625)
         self.assertEqual(audit["full_report"], "report.json")
         self.assertEqual(audit["inputs"]["model"]["hierarchy_nodes"], 1)
+
+    def test_budget_summary_of_a_model_with_many_geosets_stays_bounded(self):
+        # 40 geosets of 64 meshes with long names: each geoset row of the full report holds 64 mesh
+        # rows of about 300 bytes, so the summary would pass the 256 KiB result limit uncut.
+        meshes = [(f"mesh_{m:03d}_" + "x" * 100, [(0, 0, 0), (1, 0, 0), (0, 1, 0)], [(0, 1, 2)]) for m in range(64)]
+        nodes = [(f"node{i}", i - 1, i, (0, 0, 0)) for i in range(64)]
+        big = self.read / "geosets.3do"
+        big.write_text(model_text(meshes, nodes, geosets=40))
+        audit, full = self.assertPassed(self.service.audit_budget(str(big)))
+        budget = audit["budget"]
+        self.assertEqual((budget["status"], budget["issue_counts"]), ("over_limits", {"too_many_geosets": 1}))
+        self.assertEqual(budget["warnings"], ["Model has 40 geosets; JKDF2 allows 4 (36 over)"])
+        self.assertEqual(([row["geoset"] for row in budget["geosets"]], budget["geosets_total"]), ([0, 1, 2, 3], 40))
+        self.assertEqual(budget["geoset_count"], 40)
+        self.assertEqual(len(budget["geosets"][3]["mesh_counts"]), 64)
+        self.assertEqual(audit["limits"]["geosets"], 4)
+        self.assertEqual(len(full["budget"]["geosets"]), 40)
 
     def test_articulation_and_seat_offsets_with_a_stand_reference(self):
         result = self.service.audit_articulation(str(self.model), str(self.keys), step=1.0,

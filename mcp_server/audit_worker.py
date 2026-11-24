@@ -12,7 +12,8 @@ It writes three files beside the request:
 
 - ``report.json``: the complete plain-data reports of the add-on's audit functions;
 - ``result.json``: a bounded summary for the MCP result. Lists are cut to ``ROWS`` entries (face
-  index lists to ``FACES``), worst entries first, and each cut list has a ``*_total`` count;
+  index lists to ``FACES``, the budget's geoset rows to ``GEOSETS``), worst entries first, and
+  each cut list has a ``*_total`` count;
 - ``progress.json``: the stage and the KEYs done so far, rewritten as the audit runs, so that a job
   stopped at its deadline can say how far it got.
 
@@ -37,6 +38,9 @@ SCHEMA = "blender-sith-mcp-audit-v1"
 PACKAGE = "sith_mcp_audit"
 ROWS = 64
 FACES = 256
+# Geoset rows in the budget summary: the retail limit. Each row keeps up to ROWS mesh rows, so the
+# summary stays far below the server's report limit however many geosets the model has.
+GEOSETS = 4
 STATUS_ORDER = {"incompatible": 0, "unreadable": 0, "review": 1, "consistent": 2, "no_tracks": 3}
 
 
@@ -186,13 +190,16 @@ def audit_budget(request, progress):
     model, info = load_model(request["inputs"]["model"])
     progress.update(stage="auditing")
     report = budget.auditBudget(model, request["parameters"]["target"])
+    # The warnings and issue_counts come from the complete report; only the per-geoset rows are cut.
     warnings = budget.budgetWarnings(report)
     summary = dict(report)
-    summary["geosets"] = []
-    for row in report["geosets"]:
+    rows = []
+    for row in report["geosets"][:GEOSETS]:
         row = dict(row)
         cut(row, "mesh_counts", row["mesh_counts"])
-        summary["geosets"].append(row)
+        rows.append(row)
+    summary["geosets"] = rows
+    summary["geosets_total"] = len(report["geosets"])
     summary["warnings"] = warnings
     return {"model": info}, {"budget": {**report, "warnings": warnings}}, {"budget": summary}
 
@@ -528,7 +535,7 @@ def run(request):
     report = plain({**common, "inputs": inputs, **full}, notes)
     Path(request["report"]).write_text(json.dumps(report, indent=1, allow_nan=False) + "\n", encoding="utf-8")
     result = plain({**common, "inputs": inputs, **summaries,
-                    "limits": {"rows": ROWS, "face_indices": FACES, "findings": 32},
+                    "limits": {"rows": ROWS, "face_indices": FACES, "findings": 32, "geosets": GEOSETS},
                     "full_report": Path(request["report"]).name}, notes)
     if notes:
         result["nonfinite_values_as_null"] = notes.get("nonfinite", 0)
