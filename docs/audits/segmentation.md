@@ -167,17 +167,27 @@ save3do(fixed, 'character_fixed.3do', Model3doFileVersion.Version2_1, 'ghost fac
 ```
 
 `removeFaces` returns a new model and a report. Vertices are welded by position. An opening is a loop
-of edges that had a face on both sides before and has one after. Each opening gets the triangulation
-of least area over its loop; its caps run against the neighbouring faces' edges, so they face the same
-way as the surface around them. Each cap takes its material, face type, modes and extra light from the
-material most faces around the opening use, and each corner takes the vertex and texture vertex that a
-neighbouring face uses there, so the cap carries the surrounding texture and adds no vertices.
+of edges that had a face on both sides before and has one after. Where two openings touch at one point
+(a pinch), the loop is split there, so each loop passes through each point once. Edges that run on to
+an open border of the mesh form a chain, not a loop, and stay open.
+
+Each loop gets the triangulation of least area over it; its caps run against the neighbouring faces'
+edges, so they face the same way as the surface around them. A cap never joins two points that an
+edge of the mesh already joins, and never has three corners of one face the mesh already has, kept or
+capped earlier. Without that rule, where an opening wraps round a kept face (a tooth), the cheapest cap
+is the kept face turned inside out. A loop that no cap can close under the rule stays open. Each cap
+takes its material, face type, modes and extra light from the material most faces around the opening
+use, and each corner takes the vertex and texture vertex that a neighbouring face uses there, so the
+cap carries the surrounding texture and adds no vertices.
 
 The report gives the face counts, a `face_map` from old to new face indices (-1 for removed faces;
-kept faces keep their order and caps follow), each opening's loop, cap faces, material, `planarity`
-and `shared_edges` (cap edges across the opening that the mesh already had), loops that could not be
-walked in `unclosed`, the open edges before and after, and the vertices no face uses any more. Removed
-faces leave their vertices in place, so indices stay stable.
+kept faces keep their order and caps follow), and each capped loop's points, cap faces, material and
+`planarity`. `unclosed` lists each open chain once, and each loop no cap could close, with its points,
+up to 64 vertex indices and a `reason`. `open_edges_before` and `open_edges_after` count the edges with
+a face on one side only. `repeated_edges_before` and `repeated_edges_after` count the directed edges
+that two faces run the same way, a sign of a face stored twice or turned inside out against its
+neighbour; a removal should not raise it. `unused_vertices` counts the vertices no face uses any more.
+Removed faces leave their vertices in place, so indices stay stable.
 
 ## Piece colours
 
@@ -206,9 +216,11 @@ island 0.087 (`kygndth0` frame 74).
 
 `removeFaces` with Red's two face lists gives his face counts: 479 to 417 torso faces on the T-visor
 (74 removed, one 14-point opening, 12 caps) and 480 to 456 on the no-helmet (24 removed, no opening).
-The kept faces are identical to his. The T-visor caps are a different triangulation with 12% less area
-than his, since the opening is far from flat (planarity 0.18). Two cap edges across it coincide with
-edges the torso already had, in his release and here (`shared_edges` 2).
+The kept faces are identical to his. The T-visor caps are a different triangulation with 10% less area
+than his; the opening is far from flat (planarity 0.18). The opening wraps round two kept torso faces,
+332 and 333, and two of his 12 caps (406 and 407) are those faces turned inside out, so his torso has
+4 directed edges that two faces run the same way. Here no cap reuses an edge or the corners of a face
+the torso has: `repeated_edges_after` is 0.
 
 Darth Lilitari, zero-rotation reference: R9.2 has two `review` regions of torso surface claimed by the
 shoulders, 83 and 82 faces (lever 0.013, facing 0.02). All 165 faces are among the 328 torso faces the
@@ -237,6 +249,11 @@ The largest `review` lever among them is Biddy's torso under his head, at 0.030.
   the engine plays up to `FRAMES`, is not sampled. Pass `toEnd=True` to sample it. The MCP tool
   uses the default.
 - One geoset at a time. Characters with identical detail levels need the same edit on every geoset.
-- `removeFaces` edits one mesh and leaves unused vertices in place. A loop that does not close is left
-  open and listed. Caps across an opening far from flat may cut inside the surface: check them in the
-  poses that matter.
+- `removeFaces` edits one mesh and leaves unused vertices in place. An open chain, and a loop that no
+  cap can close without reusing an edge or the corners of a face, is left open and listed in
+  `unclosed`. Caps across an opening far from flat may cut inside the surface: check them in the poses
+  that matter.
+- Each loop is capped on its own. A removal that leaves two rims, such as a band of faces, gets a cap
+  on each rim. That closes both pieces where the band ran round a tube, but on a flat patch the outer
+  cap lies over the kept faces inside the band. The same happens where one opening touches itself at a
+  point, since the loop is split there. Check the caps when one removal gives several loops.

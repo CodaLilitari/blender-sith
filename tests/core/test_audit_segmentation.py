@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Rigid-piece cut lint and face removal on synthetic models (no Blender, no game data)."""
+import copy
 import json
 import math
 import unittest
@@ -140,6 +141,41 @@ def character(strip=False, shard=False, shards=0):
     return model, added
 
 
+def one_mesh(builder, name='mesh.3do'):
+    """A model whose only node carries the builder's mesh."""
+    model = Model3do(name)
+    geoset = Model3doGeoSet()
+    geoset.meshes = [builder.mesh(0, 'mesh')]
+    model.geosets = [geoset]
+    model.meshHierarchy = [node(0, 'mesh', -1, 0)]
+    return model
+
+
+def tooth(quad=False):
+    """A square opening in a flat ring with a kept tooth sticking into it, its tip lifted out of plane.
+
+    The tooth is a triangle, or with ``quad`` a quad with two tips, standing on the opening's lower
+    edge. The removed faces fan from a point inside the opening. Returns the builder, the tooth's
+    face index and the removed faces.
+    """
+    builder = MeshBuilder()
+    c, a = (-0.2, -1.0, 0.0), (0.2, -1.0, 0.0)
+    tips = [(0.15, -0.3, 1.0), (-0.15, -0.3, 1.0)] if quad else [(0.0, -0.2, 1.0)]
+    outline = [(-1.0, -1.0, 0.0), c, a, (1.0, -1.0, 0.0), (1.0, 1.0, 0.0), (-1.0, 1.0, 0.0)]
+    for u, v in zip(outline, outline[1:] + outline[:1]):
+        builder.face([v, u, (2 * u[0], 2 * u[1], 0.0), (2 * v[0], 2 * v[1], 0.0)])
+    kept = builder.face([c, a] + tips)
+    hole = [outline[0], c] + tips[::-1] + [a] + outline[3:]
+    centre = (0.0, 0.5, 0.0)
+    removed = [builder.face([u, v, centre]) for u, v in zip(hole, hole[1:] + hole[:1])]
+    return builder, kept, removed
+
+
+def face_area(mesh, face):
+    p = np.array([tuple(mesh.vertices[v]) for v in face.vertexIdxs])
+    return sum(0.5 * np.linalg.norm(np.cross(p[k] - p[0], p[k + 1] - p[0])) for k in range(1, len(p) - 1))
+
+
 def snapshot(model):
     """Every value that an audit or an edit must not change."""
     out = []
@@ -259,6 +295,17 @@ class GeometryHelperTests(unittest.TestCase):
             if (a - b) % 8 == 1:
                 self.fail('a loop edge runs against the loop')
             self.assertIn((b, a), directed)
+
+    def test_triangulation_avoids_blocked_edges_and_triangles(self):
+        square = [(0, 0, 0), (1, 0, 0), (1, 1, 0.1), (0, 1, 0)]
+        self.assertEqual(triangulatePolygon(square), [(0, 1, 3), (1, 2, 3)])
+        self.assertEqual(triangulatePolygon(square, blockedEdges=[(3, 1)]), [(0, 1, 2), (0, 2, 3)])
+        self.assertEqual(triangulatePolygon(square, blockedTriangles=[(3, 0, 1)]), [(0, 1, 2), (0, 2, 3)])
+        # Neighbours on the loop, including the closing pair, cannot be blocked: they are its edges.
+        self.assertEqual(triangulatePolygon(square, blockedEdges=[(0, 1), (0, 3)]), [(0, 1, 3), (1, 2, 3)])
+        self.assertIsNone(triangulatePolygon(square, blockedEdges=[(0, 2), (1, 3)]))
+        self.assertIsNone(triangulatePolygon(square[:3], blockedTriangles=[(0, 1, 2)]))
+        self.assertEqual(triangulatePolygon(square[:2]), [])
 
 
 class PartTests(unittest.TestCase):
@@ -456,8 +503,9 @@ class RemoveFacesTests(unittest.TestCase):
         self.assertEqual((report['faces_before'], report['faces_removed'], report['cap_faces']), (96, 4, 6))
         self.assertEqual((report['open_edges_before'], report['open_edges_after']), (0, 0))
         self.assertEqual(report['unclosed'], [])
+        self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (0, 0))
         opening, = report['openings']
-        self.assertEqual((len(opening['vertices']), opening['material'], opening['shared_edges']), (8, 3, 0))
+        self.assertEqual((len(opening['vertices']), opening['material']), (8, 3))
         self.assertAlmostEqual(opening['planarity'], 0.0)
         mesh = fixed.geosets[0].meshes[0]
         self.assertEqual(len(mesh.faces), 98)
@@ -482,6 +530,97 @@ class RemoveFacesTests(unittest.TestCase):
         fixed, report = removeFaces(model, 0, self.patch(model), closeOpenings=False)
         self.assertEqual((report['cap_faces'], report['open_edges_after']), (0, 8))
         self.assertEqual(len(fixed.geosets[0].meshes[0].faces), 92)
+
+    def cells(self, model, *cells):
+        """Faces of the +x side's cells (i, j): y from 0.01 i and z from 0.01 j."""
+        mesh = model.geosets[0].meshes[0]
+        out = []
+        for fi, face in enumerate(mesh.faces):
+            pts = np.array([tuple(mesh.vertices[v]) for v in face.vertexIdxs])
+            if np.allclose(pts[:, 0], 0.04) and (round(pts[:, 1].min() / 0.01), round(pts[:, 2].min() / 0.01)) in cells:
+                out.append(fi)
+        return out
+
+    def test_caps_never_turn_a_kept_tooth_inside_out(self):
+        # The opening wraps round a kept face whose tip stands out of the plane. The cap of least area
+        # would be that face turned inside out (as two caps were on Mandalorian Red's flank); a triangle
+        # tooth needs the edge rule, a quad tooth the corner rule as well.
+        for quad in (False, True):
+            with self.subTest(quad=quad):
+                builder, kept, removed = tooth(quad)
+                model = one_mesh(builder)
+                fixed, report = removeFaces(model, 0, removed)
+                mesh = fixed.geosets[0].meshes[0]
+                corners = set(model.geosets[0].meshes[0].faces[kept].vertexIdxs)
+                opening, = report['openings']
+                loop = opening['vertices']
+                self.assertEqual(len(loop), 8 if quad else 7)
+                self.assertEqual(len(opening['cap_faces']), len(loop) - 2)
+                self.assertEqual(report['unclosed'], [])
+                for cap in opening['cap_faces']:
+                    self.assertFalse(set(mesh.faces[cap].vertexIdxs) <= corners)
+                # Only the ring's outer border stays open, and no edge is used twice the same way.
+                self.assertEqual((report['open_edges_before'], report['open_edges_after']), (6, 6))
+                self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (0, 0))
+                # Without the rules the cheapest cap does cover the tooth: the case is a real one.
+                points = np.array([tuple(mesh.vertices[v]) for v in loop])
+                self.assertTrue(any({loop[i] for i in t} <= corners for t in triangulatePolygon(points)))
+
+    def test_openings_that_touch_at_a_point_are_capped_apart(self):
+        # Two cells that share only a corner: a figure eight through that point, walked as two loops.
+        for pair in (((1, 2), (2, 1)), ((0, 0), (1, 1))):
+            with self.subTest(cells=pair):
+                model = self.closed_box()
+                fixed, report = removeFaces(model, 0, self.cells(model, *pair))
+                self.assertEqual([len(o['vertices']) for o in report['openings']], [4, 4])
+                self.assertEqual((report['cap_faces'], report['unclosed']), (4, []))
+                self.assertEqual((report['open_edges_after'], report['repeated_edges_after']), (0, 0))
+                mesh = fixed.geosets[0].meshes[0]
+                for (a, b), faces in edges(mesh).items():
+                    self.assertEqual(len(faces), 1)
+                    self.assertIn((b, a), edges(mesh))
+                for cap in mesh.faces[94:]:
+                    self.assertEqual(len(set(cap.vertexIdxs)), 3)
+                    self.assertAlmostEqual(face_area(mesh, cap), 0.5e-4)
+
+    def test_an_open_chain_is_listed_once(self):
+        # A 4 x 4 sheet with an open border: a notch of two cells at its edge leaves one chain, no loop.
+        builder = MeshBuilder()
+        for i in range(4):
+            for j in range(4):
+                builder.face([(0.01 * i, 0.01 * j, 0.0), (0.01 * (i + 1), 0.01 * j, 0.0),
+                              (0.01 * (i + 1), 0.01 * (j + 1), 0.0), (0.01 * i, 0.01 * (j + 1), 0.0)])
+        model = one_mesh(builder)
+        notch = [4, 8]                                            # cells (1, 0) and (2, 0)
+        fixed, report = removeFaces(model, 0, notch)
+        self.assertEqual((report['cap_faces'], report['openings']), (0, []))
+        self.assertEqual((report['open_edges_before'], report['open_edges_after']), (16, 18))
+        chain, = report['unclosed']
+        self.assertEqual((chain['points'], chain['reason']), (5, 'the edges do not close into a loop'))
+        mesh = model.geosets[0].meshes[0]
+        self.assertEqual([tuple(round(x * 100) for x in tuple(mesh.vertices[v])[:2]) for v in chain['vertices']],
+                         [(3, 0), (3, 1), (2, 1), (1, 1), (1, 0)])
+
+    def test_a_loop_no_cap_can_close_is_left_open(self):
+        # Three faces of a tetrahedron removed: the only cap is the fourth face turned inside out.
+        builder = MeshBuilder()
+        faces = builder.tetra((0.0, 0.0, 0.0), 0.01)
+        model = one_mesh(builder)
+        fixed, report = removeFaces(model, 0, faces[1:])
+        self.assertEqual((report['cap_faces'], report['openings'], report['faces_after']), (0, [], 1))
+        loop, = report['unclosed']
+        self.assertEqual(loop['points'], 3)
+        self.assertEqual(sorted(loop['vertices']), sorted(model.geosets[0].meshes[0].faces[faces[0]].vertexIdxs))
+        self.assertEqual(loop['reason'], 'every cap would reuse an edge or the corners of a face the mesh has')
+        self.assertEqual((report['open_edges_after'], report['repeated_edges_after']), (3, 0))
+
+    def test_repeated_edges_are_counted(self):
+        model = self.closed_box()
+        mesh = model.geosets[0].meshes[0]
+        mesh.faces.append(copy.deepcopy(mesh.faces[0]))           # a face stored twice
+        fixed, report = removeFaces(model, 0, self.patch(model))
+        self.assertEqual((report['repeated_edges_before'], report['repeated_edges_after']), (4, 4))
+        self.assertEqual(report['cap_faces'], 6)
 
     def test_metadata_and_blender_links(self):
         model = self.closed_box()
