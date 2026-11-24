@@ -17,7 +17,15 @@ and `rdThing_AccumulateMatrices`, as reconstructed by OpenJKDF2 from retail JK.E
   Rotation deltas are normalized to the engine's acute range ``(-180, 180]`` per component.
 - Joint frames accumulate parent to child: ``F_i = F_parent * T(position_i) * R(PYR_i)``.
   A node's pivot offsets its own mesh only: ``v_world = F_i * (v + pivot_i)``.
-  The root's parent frame is ``T(insertOffset)``.
+- The root's parent frame here is ``T(insertOffset)``, the add-on's model frame. The engine
+  itself draws from the thing's placement and uses the insert offset when it places the thing
+  (``sithThing_CreateThing``) and for its physics height (``sithPhysics``), so these frames are
+  the thing's frame shifted by the insert offset. That leaves every relative measure unchanged and
+  puts a stock standing character's floor near z = 0; ``sith.audit.ground`` documents the
+  engine floor for absolute heights.
+- A mesh shared by several nodes is drawn once per node (``rdModel3_DrawHNode``).
+  ``Pose.vertices`` keeps the first node's copy per mesh; ``posedNodeVertices`` gives every drawn
+  instance.
 
 Rotations are pitch/yaw/roll degrees built as ``Rz(yaw) * Rx(pitch) * Ry(roll)``, the order of
 ``rdMatrix_Build34``. Positions are JK units. A pose is a static evaluation: it does not run
@@ -34,7 +42,7 @@ import numpy as np
 __all__ = [
     'PoseLayer', 'LocalPose', 'Pose', 'rotationMatrix', 'normalizeAngleAcute', 'keyTrack',
     'sampleTrack', 'blendLocalPose', 'jointFrames', 'meshFrames', 'posedMeshVertices',
-    'poseModel', 'restPose', 'keyFrameTimes', 'nodeTypeValue',
+    'posedNodeVertices', 'poseModel', 'restPose', 'keyFrameTimes', 'nodeTypeValue',
 ]
 
 
@@ -231,7 +239,7 @@ def _nodeMatrix(position, rotation, preRotation=None) -> np.ndarray:
 
 
 def jointFrames(model, local: LocalPose, preRotations: Optional[Mapping[int, Iterable[float]]] = None) -> np.ndarray:
-    """(N, 4, 4) joint frames ``F_i``, parent first, rooted at ``T(insertOffset)``.
+    """(N, 4, 4) joint frames ``F_i``, parent first, rooted at ``T(insertOffset)`` (see the module notes).
 
     ``preRotations`` maps node indices to a (pitch, yaw, roll) applied in the joint's own
     space after blending, as the engine does for the player's aim.
@@ -284,6 +292,23 @@ def posedMeshVertices(model, frames: np.ndarray, geoset: int = 0) -> Dict[int, n
             continue
         verts = np.array([tuple(v) for v in meshes[m].vertices], dtype=float).reshape(-1, 3)
         out[m] = verts @ carried[i, :3, :3].T + carried[i, :3, 3]
+    return out
+
+
+def posedNodeVertices(model, frames: np.ndarray, geoset: int = 0) -> Dict[int, np.ndarray]:
+    """World vertices by hierarchy node for one geoset: every instance the engine draws.
+
+    Unlike ``posedMeshVertices``, a mesh referenced by several nodes appears once per node.
+    """
+    carried = meshFrames(model, frames)
+    meshes = model.geosets[geoset].meshes if model.geosets else []
+    out: Dict[int, np.ndarray] = {}
+    for i, node in enumerate(model.meshHierarchy):
+        m = node.meshIdx
+        if m is None or m < 0 or m >= len(meshes):
+            continue
+        verts = np.array([tuple(v) for v in meshes[m].vertices], dtype=float).reshape(-1, 3)
+        out[i] = verts @ carried[i, :3, :3].T + carried[i, :3, 3]
     return out
 
 

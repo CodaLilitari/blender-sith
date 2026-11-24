@@ -6,8 +6,8 @@ import unittest
 import numpy as np
 
 from sith.audit.pose import (PoseLayer, blendLocalPose, jointFrames, keyFrameTimes, keyTrack,
-                             normalizeAngleAcute, poseModel, posedMeshVertices, restPose,
-                             rotationMatrix, sampleTrack)
+                             normalizeAngleAcute, poseModel, posedMeshVertices, posedNodeVertices,
+                             restPose, rotationMatrix, sampleTrack)
 from sith.key.key import Key, Keyframe, KeyframeFlag, KeyNode
 from sith.model.model3do import Mesh3do, Mesh3doNode, Mesh3doNodeType, Model3do, Model3doGeoSet
 from sith.types import Vector3f
@@ -155,6 +155,17 @@ class HierarchyTests(unittest.TestCase):
         frames = jointFrames(model, local, {1: (0, 90, 0)})
         np.testing.assert_allclose(frames[2][:3, 3], [1, 1, 0], atol=1e-12)
         np.testing.assert_allclose(frames[1][:3, 3], [1, 0, 0], atol=1e-12)
+
+    def test_shared_mesh_is_drawn_per_node(self):
+        model = chain(pivot=(0, 0, 0))
+        model.meshHierarchy[2].meshIdx = 1
+        frames = restPose(model, vertices=False).frames
+        byMesh = posedMeshVertices(model, frames)
+        byNode = posedNodeVertices(model, frames)
+        self.assertEqual(sorted(byMesh), [0, 1])
+        self.assertEqual(sorted(byNode), [0, 1, 2])
+        np.testing.assert_allclose(byMesh[1][0], [1, 0, 0])
+        np.testing.assert_allclose(byNode[2][0], [2, 0, 0])
 
     def test_meshless_nodes_and_cycles(self):
         model = chain()
