@@ -34,6 +34,7 @@ from sith.audit.segmentation import auditSegmentation, pieceColours
 from sith.audit.ground import auditCameraReading, auditFloorContact, CarriedMesh
 from sith.audit.articulation import auditArticulation, referencePose, seatOffsets
 from sith.audit.keylint import lintKeyHeader, scanKeyPops, keyPriorityReport, trackRegistry
+from sith.key.keyEuler import eulerTwin, nearestEuler, unwrapEuler
 from sith.key.keyReseat import checkReseat, reseatKey, reseatKeyFiles
 '''
         # Blender's embedded Python executable is blender.exe, not a Python CLI.

@@ -7,7 +7,7 @@ returns plain data. It never edits its inputs.
 | Function | What it answers |
 | --- | --- |
 | `lintKeyHeader` | Does the engine load the header and track table the way the author meant? |
-| `scanKeyPops` | Does the KEY play motion between entries that no entry describes? |
+| `scanKeyPops` | Does the KEY play motion at or between entries that no entry describes? |
 | `keyPriorityReport` | Which model nodes does the KEY drive, and at which priority? |
 | `trackRegistry` | Can several characters' KEYs share one pack? |
 
@@ -17,11 +17,11 @@ The KEY exporter also changed: see [Export continuity](#export-continuity).
 
 Three faults in custom characters led to it.
 
-- **Pops in the lightwhip KEYs.** The engine moves each pitch, yaw and roll component in a
-  straight line from one entry to the next. A large change between entries, or a switch to the
-  other Euler form of the same rotation, swings a joint through a pose nobody authored. Red fixed
-  the lightwhip moves with two rules. The elbow may turn only so far per frame. Each frame keeps
-  the Euler triple nearest the previous frame's.
+- **Pops in the lightwhip KEYs.** From each entry the engine moves each pitch, yaw and roll
+  component with that entry's own deltas until the next entry. A large change between entries, or
+  a switch to the other Euler form of the same rotation, swings a joint through a pose nobody
+  authored. Red fixed the lightwhip moves with two rules. The elbow may turn only so far per
+  frame. Each frame keeps the Euler triple nearest the previous frame's.
 - **JOINTS below the model's node count.** Coda's binding check flagged 29 body KEYs that
   declare `JOINTS 18` or `JOINTS 20` for a 64-node model.
 - **Track slots that collide.** Lilivane's ground-contact tracks on nodes 47 and 48 collide
@@ -38,9 +38,12 @@ The rules come from OpenJKDF2's reconstruction of retail JK.EXE 1.01.
   numbered below 0 or at `JOINTS` or above is written outside the allocation. A later track for
   the same node overwrites the earlier one.
 - `rdPuppet_BuildJointMatrices` reads tracks only for nodes below `JOINTS`. It finds the
-  current entry by scanning forward from the last one. It moves each Euler component linearly
-  from that entry. A track counts at its high priority on nodes whose type shares a bit with the
-  KEY's `TYPE` mask, and at its low priority elsewhere.
+  current entry by scanning forward from the last one, and keeps it per track number in a
+  64-entry array (`aCurKfNodeEntryNums` in `rdPuppetTrack`). From that entry it moves each Euler
+  component and the position with the entry's own deltas until the next entry, then takes the
+  next entry's stored values. A track counts at its high priority on nodes whose type shares a
+  bit with the KEY's `TYPE` mask, and at its low priority elsewhere.
+- `rdKeyframe_LoadEntry` fails the whole load when a KEY declares more than 8 markers.
 - `rdPuppet_AdvanceTrack` keeps playback time below `FRAMES` while a KEY loops. When a play
   holds its last frame, time stops at `FRAMES`.
 - `RDPUPPET_MAX_NODES` is 64 (`engine_config.h`).
@@ -94,10 +97,23 @@ KEY frames. Speeds are per second at the KEY's FPS. Angles are degrees. Position
 | Code | Status | Meaning |
 | --- | --- | --- |
 | `track_past_joints` | incompatible | A track numbered below 0 or at `JOINTS` or above. Retail writes it outside the KEY's allocation. |
+| `track_past_puppet_nodes` | incompatible | A track with entries, numbered 64 or above, in a KEY that declares more than 64 `JOINTS`. The puppet keeps one entry cursor per track number in a 64-entry array and reads past it for this track, and can write past it: track 64 lands on the playback time, later numbers on the fields after it, including the KEY pointer. Gives the track's entry count and `JOINTS`. |
 | `entry_order` | incompatible | An entry whose frame is not after the previous one's. The forward scan skips the earlier entry and plays this one from a later time. Gives the entry, both frames, and how many entries in the track are out of order. |
 | `duplicate_track` | review | Several tracks for one node. `kept_track` is the one the engine keeps: the last. |
 | `entry_past_frames` | review | Entries after `FRAMES`. They never play. An entry at exactly `FRAMES` is not a finding. |
 | `joints_below_model` | review | The model has nodes at `JOINTS` or above. This KEY cannot drive them. OpenJKDF2 also guards a read of the track table for them that the original may make past its end. Needs a model. |
+
+The header is also checked against the target the way the binding audit checks it
+(`sith.key.modelBinding.keyTargetFindings`). Without a model these are findings of this report;
+with a model they are in `binding`:
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `non_text_key` | incompatible | Not a text KEY. JKDF2 and MOTS read text KEYs only. |
+| `invalid_key_number` | incompatible | A number that is not a finite float32. |
+| `key_target_limit` | incompatible | More than 64 `JOINTS`, more than 8 markers, or a KEY or track name that is longer than 31 characters or that the text format cannot hold. A source that declares more than 8 markers counts too: the engine fails the whole load. |
+| `unrecognized_markers` | review | The loader dropped marker types it does not know. |
+| `invalid_playback_header` | incompatible | `FRAMES` below 1 or `FPS` not above 0. The puppet divides by `FRAMES` while a KEY loops (`rdPuppet_AdvanceTrack`). |
 
 `recommended_joints` is 64. `recommendations` has a `joints_64` entry when the KEY declares
 another count. A recommendation never changes `status`.
@@ -110,15 +126,16 @@ expected.
 
 ### `scanKeyPops(key, model=None, *, limits=PopLimits(), nodes=None, baseLayers=(), lowPri=1, highPri=None)`
 
-Every finding here is `review`. The KEY plays, but its motion between entries is not what its
-entries describe.
+Every finding here is `review`. The KEY plays, but look at its motion there: it is not the
+smooth motion its entries describe.
 
 | Code | Meaning | Size fields |
 | --- | --- | --- |
 | `euler_flip` | Between two entries the path strays at least `flipDetour` degrees beyond the shortest turn, and the end rotation has a nearer Euler triple: the other form (`form: twin`) or fewer whole turns (`form: turn`). `nearest` is that triple. | `component_change`, `rotation_change`, `detour` |
-| `wide_step` | The same detour, with the end already in its nearest form. The step is too wide for linear Euler interpolation. Add entries. | as above |
-| `form_switch` | At an entry the rotation is continuous (within 1 degree) but a component jumps by at least `formJump` beyond whole turns. A layer at full weight does not show it. A fade or a second-priority fill does, because partial weights scale each component. | `component_change` |
-| `velocity_spike` | The joint turns `spikeRatio` times faster than its neighbours. Not repeated inside an `euler_flip` or `wide_step`. | `speed`, `reference`, `ratio` |
+| `wide_step` | The same detour, with the end already in its nearest form. The step is too wide for a straight line in Euler components. Add entries. | as above |
+| `entry_jump` | At an entry below `FRAMES`, the joint snaps from where the previous entry's motion ends to the entry's stored values: the rotation turns more than `entryAngle` degrees or the position moves more than `entryDistance` JK units. `form` is `twin` or `turn` when the stored triple is also not the triple of its rotation nearest where the motion ended, else null. | `angle`, `distance` |
+| `form_switch` | At an entry below `FRAMES` that does not jump, a component changes by at least `formJump` beyond whole turns. A layer at full weight does not show it. A fade or a second-priority fill does, because partial weights scale each component. | `component_change` |
+| `velocity_spike` | The joint turns `spikeRatio` times faster than its neighbours. Not repeated inside an `euler_flip` or `wide_step`, or across an `entry_jump` whose rotation jumps. | `speed`, `reference`, `ratio` |
 | `position_jump` | With a model: a node moves `jumpRatio` times faster than its neighbours. One finding per event names the node that moved furthest. `nodes` counts the nodes involved. | `distance`, `speed`, `reference`, `ratio` |
 
 `detour` is the largest `angle(start, x) + angle(x, end) - angle(start, end)` along the sampled
@@ -130,15 +147,21 @@ flip.
 | --- | --- | --- |
 | `step` | 0.25 | Sample spacing in KEY frames. Each segment also gets at least 8 samples. |
 | `flipDetour` | 45 | Detour, in degrees, that makes a segment an `euler_flip` or `wide_step`. |
-| `spikeRatio`, `spikeFloor` | 8, 360 | A spike is at least 8 times its reference. The reference is never below 360 degrees per second. |
-| `jumpRatio`, `jumpFloor` | 8, model height per second | The same rule for node positions. `jump_floor` in the report gives the value used. |
+| `spikeRatio`, `spikeFloor` | 8, 360 | A spike is at least 8 times its reference. The reference is never below 360 degrees per second, so nothing slower than 2,880 degrees per second is a spike. |
+| `jumpRatio`, `jumpFloor` | 8, model height per second | The same rule for node positions: nothing slower than 8 model heights per second is a jump. `jump_floor` in the report gives the value used. |
 | `window`, `guard` | 2, 0 | Frames on each side whose median speed is the reference, and frames next to the interval left out. |
+| `entryAngle`, `entryDistance` | 2, 0.001 | The largest rotation (degrees) and position change (JK units) at an entry that still counts as continuous. More is an `entry_jump`. |
 | `formJump` | 90 | Component change that makes a continuous entry a `form_switch`. |
 
 The reference is the larger of the two medians. A median ignores up to 3 of the 8 samples in a
 2-frame window. A burst of about one frame (one entry, in a KEY keyed every frame) therefore
 stands out. A longer motion, such as a deliberate strike, sets its own reference. Raise `guard`
 to compare against farther neighbours.
+
+Real KEYs keyed with continuous deltas never jump at an entry. In the stock KEYs, the lightwhip
+sets and the KEYs shipped with Darth Lilitari R9.10, Lilivane R3 and Biddy Blas R3.6 (96,488
+entries in 415 KEYs), the largest change at an entry is 0.00003 degrees and 0.000001 JK units.
+A deliberate step, such as a held channel, is an `entry_jump` too: read it against the KEY.
 
 The report also gives `tracks_scanned`, `tracks_skipped` (tracks with out-of-order entries; see
 `entry_order`), `nodes_scanned` and the `limits` used. By default the position check covers
@@ -210,8 +233,10 @@ recommends 64 for JKDF2 and MOTS. No export option was added for it.
   and roll only matter as a sum or difference. It does not choose within that family, so a pose
   keyed exactly at ±90 can still change yaw and roll together.
 - `form_switch` is about blending. It does not say how a particular blend will look.
+- `entry_jump` and `form_switch` look at entries below `FRAMES`. An entry at `FRAMES` plays only
+  when a play holds its last frame; a large jump there can still show as a `velocity_spike`.
 - The position check samples mesh-frame origins, not vertices or attached weapon meshes.
 - The registry does not read puppet (`.pup`) or COG files. It assumes a character plays every
   KEY in its set. It compares tracks to 1e-6 and judges meshes from geoset 0.
-- `lintKeyHeader` does not check `FLAGS`, markers or names; the binding audit covers markers and
-  names.
+- `lintKeyHeader` does not check `FLAGS`. It checks markers and names only against the target's
+  limits, as the binding audit does.

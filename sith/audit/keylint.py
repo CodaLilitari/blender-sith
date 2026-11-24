@@ -4,9 +4,11 @@
 Four checks. Each returns plain data and none edits its inputs:
 
 - ``lintKeyHeader``: the header and track table as the engine loads them. It adds to
-  ``sith.key.modelBinding.auditModelKey``, which it runs when given a model.
-- ``scanKeyPops``: pops between entries. These are Euler-form flips, steps too wide for linear
-  Euler interpolation, angular-speed spikes and, with a model, world-position jumps.
+  ``sith.key.modelBinding.auditModelKey``, which it runs when given a model; without one it runs
+  that audit's checks that need no model.
+- ``scanKeyPops``: pops at and between entries. These are Euler-form flips, steps too wide for a
+  straight line in Euler components, jumps at an entry, angular-speed spikes and, with a model,
+  world-position jumps.
 - ``keyPriorityReport``: which model nodes a KEY drives at its high and low priority, and which
   it leaves to lower layers.
 - ``trackRegistry``: the custom track slots several characters use, and where they collide
@@ -19,9 +21,11 @@ Engine rules reproduced here (OpenJKDF2's reconstruction of retail JK.EXE 1.01):
   track numbered outside ``0 .. JOINTS-1`` is written outside the allocation. A later track for
   the same node overwrites the earlier record.
 - ``rdPuppet_BuildJointMatrices`` reads a track only for nodes below ``JOINTS``. It finds the
-  current entry by scanning forward from the last one, and moves each (pitch, yaw, roll)
-  component linearly from an entry until the next. It blends the KEY's priority per node: the
-  high priority where the KEY's node-type mask shares a bit with the node's type, else the low.
+  current entry by scanning forward from the last one, and keeps that entry per track number in
+  a 64-entry array. From each entry it moves each (pitch, yaw, roll) component and the position
+  with that entry's own deltas until the next entry, then takes the next entry's stored values.
+  It blends the KEY's priority per node: the high priority where the KEY's node-type mask shares
+  a bit with the node's type, else the low.
 - ``rdPuppet_AdvanceTrack`` keeps playback time below ``FRAMES`` while a KEY loops. It stops at
   ``FRAMES`` when the play holds its last frame.
 
@@ -36,7 +40,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..key.keyEuler import eulerTwin, nearestEuler, unwrapEuler
-from ..key.modelBinding import DETAIL_LIMIT, auditModelKey
+from ..key.modelBinding import DETAIL_LIMIT, auditModelKey, keyTargetFindings
 from ..model.model3do import Mesh3doNodeType
 from .pose import PoseLayer, keyTrack, nodeTypeValue, poseModel, restPose
 
@@ -45,7 +49,8 @@ __all__ = [
     'scanKeyPops', 'keyPriorityReport', 'trackRegistry',
 ]
 
-# rdPuppet tracks address at most RDPUPPET_MAX_NODES (64) model nodes (engine_config.h).
+# rdPuppet tracks address at most RDPUPPET_MAX_NODES (64) model nodes (engine_config.h), and each
+# playing track keeps its entry cursors in a 64-entry array (rdPuppetTrack.aCurKfNodeEntryNums).
 RECOMMENDED_JOINTS = 64
 _TARGETS = ('JKDF2', 'MOTS')
 _STATUS_LEVEL = {'incompatible': 2, 'review': 1, 'consistent': 0, 'no_tracks': 0}
@@ -116,6 +121,12 @@ def lintKeyHeader(key, model=None, *, target: str = 'JKDF2') -> dict:
 
     - ``track_past_joints``: a track numbered below 0 or at or past ``JOINTS``. Retail stores
       it outside the KEY's track allocation.
+    - ``track_past_puppet_nodes``: a track with entries, numbered 64 or above, in a KEY that
+      declares more than 64 ``JOINTS``. ``rdPuppet_BuildJointMatrices`` keeps each playing KEY's
+      current entry per track number in a 64-entry array (``aCurKfNodeEntryNums`` in
+      ``rdPuppetTrack``). For such a track it reads past that array and can write past it: track
+      64 lands on the playback time, and later numbers on the fields after it, including the KEY
+      pointer.
     - ``duplicate_track`` (review): more than one track for a node; the last one wins.
     - ``entry_order``: an entry whose frame is not after the previous entry's. The engine's
       forward scan skips the earlier entry and plays this one from a later time. With a model,
@@ -128,10 +139,17 @@ def lintKeyHeader(key, model=None, *, target: str = 'JKDF2') -> dict:
       for those nodes that the original may make past its end.
 
     ``recommended_joints`` is 64 for both targets. Writing ``JOINTS 64`` lets the KEY address
-    every node the engine supports and avoids that read. With a model, ``binding`` holds
-    ``auditModelKey(model, key, target)``, and ``status`` is the worse of the two reports.
-    Tracks are checked as stored. Load files with ``loadKey(path, strictTracks=False)`` so that
-    out-of-range and repeated tracks reach this check.
+    every node the engine supports and avoids that read.
+
+    The header is checked against the target as ``auditModelKey`` checks it
+    (``sith.key.modelBinding.keyTargetFindings``): ``non_text_key``, ``invalid_key_number``,
+    ``key_target_limit`` (JOINTS, markers and name lengths; more than 8 markers fails the load),
+    ``unrecognized_markers`` (review) and ``invalid_playback_header`` (FRAMES below 1 or FPS not
+    above 0). Without a model they are findings of this report. With a model, ``binding`` holds
+    ``auditModelKey(model, key, target)``, which reports them, and ``status`` is the worse of the
+    two reports. Tracks are checked as stored. Load files with
+    ``loadKey(path, strictTracks=False)`` so that out-of-range and repeated tracks reach this
+    check.
     """
     if target not in _TARGETS:
         raise ValueError('Choose JKDF2 or MOTS for the KEY lint')
@@ -142,6 +160,9 @@ def lintKeyHeader(key, model=None, *, target: str = 'JKDF2') -> dict:
               'model_joints': len(model.meshHierarchy) if model is not None else None,
               'frames': frames, 'tracks': len(key.nodes), 'recommendations': [], 'binding': None}
     found = _Findings()
+    if model is None:
+        for level, code, details in keyTargetFindings(key, target):
+            found.add(level, code, **details)
 
     seen: Dict[int, List[int]] = {}
     for position, track in enumerate(key.nodes):
@@ -165,6 +186,10 @@ def lintKeyHeader(key, model=None, *, target: str = 'JKDF2') -> dict:
             kept = key.nodes[positions[-1]]
             found.add(1, 'duplicate_track', index=index, tracks=len(positions),
                       kept_track=positions[-1], key_name=_name(kept.meshName))
+        played = keyTrack(key, index)        # None past JOINTS: track_past_joints covers it
+        if index >= RECOMMENDED_JOINTS and played is not None:
+            found.add(2, 'track_past_puppet_nodes', index=index, key_name=_name(played.meshName),
+                      entries=len(played.keyframes), joints=joints)
 
     if model is not None:
         nodes = len(model.meshHierarchy)
@@ -186,22 +211,30 @@ def lintKeyHeader(key, model=None, *, target: str = 'JKDF2') -> dict:
     return report
 
 
-# --- pops between entries -----------------------------------------------------------------
+# --- pops at and between entries ----------------------------------------------------------
 
 @dataclass(frozen=True)
 class PopLimits:
-    """Thresholds for ``scanKeyPops``. Angles are degrees; times are KEY frames.
+    """Thresholds for ``scanKeyPops``. Angles are degrees, distances JK units, times KEY frames.
 
     ``step`` is the sample spacing. ``flipDetour`` is how far, in degrees, the path between two
-    entries may stray beyond the shortest turn between them. A sample interval is a spike when
-    a joint turns at least ``spikeRatio`` times faster than the median of the ``window`` frames
-    on each side, and faster than ``spikeFloor`` degrees per second. ``guard`` frames next to
-    the interval can be left out of those windows; none are by default. A median ignores up to
-    3 of the 8 samples in a 2-frame window, so a burst of about one frame (one entry in a KEY
-    keyed every frame) stands out, while a longer motion, such as a deliberate strike, sets its
-    own reference. Position jumps use ``jumpRatio`` and ``jumpFloor`` (JK units per second;
-    by default one model height per second) the same way. ``formJump`` is the component
-    change, in degrees, at which a continuous entry boundary counts as a change of Euler form.
+    entries may stray beyond the shortest turn between them.
+
+    A sample interval is a spike when the joint turns at least ``spikeRatio`` times faster than
+    its reference: the larger of the two neighbour medians and ``spikeFloor`` degrees per second.
+    The neighbours are the sample intervals in the ``window`` frames on each side; ``guard``
+    frames next to the interval can be left out of them, and none are by default. With the
+    defaults, nothing slower than 2880 degrees per second is a spike. A median ignores up to 3 of
+    the 8 samples in a 2-frame window, so a burst of about one frame (one entry in a KEY keyed
+    every frame) stands out, while a longer motion, such as a deliberate strike, sets its own
+    reference. Position jumps use ``jumpRatio`` and ``jumpFloor`` the same way, in JK units per
+    second. ``jumpFloor`` defaults to one model height per second, so with the defaults a node
+    must move at least 8 model heights per second.
+
+    ``entryAngle`` and ``entryDistance`` are the largest rotation and position change at an entry,
+    from where the previous entry's motion ends to the entry's stored values, that still counts as
+    continuous. ``formJump`` is the component change, in degrees, at which a continuous entry
+    counts as a change of Euler form.
     """
     step: float = 0.25
     flipDetour: float = 45.0
@@ -212,10 +245,14 @@ class PopLimits:
     window: float = 2.0
     guard: float = 0.0
     formJump: float = 90.0
+    entryAngle: float = 2.0
+    entryDistance: float = 0.001
 
     def __post_init__(self):
         if not (math.isfinite(self.step) and self.step > 0) or not self.window > 0 or self.guard < 0:
             raise ValueError('Pop scan step must be a positive finite number, window positive and guard nonnegative')
+        if not self.entryAngle >= 0 or not self.entryDistance >= 0:
+            raise ValueError('Pop scan entryAngle and entryDistance must be nonnegative')
 
 
 def _increasing(entries) -> bool:
@@ -228,6 +265,14 @@ def _trackArrays(track):
     delta = np.array([tuple(e.deltaRotation) if int(e.flags) & 2 else (0.0, 0.0, 0.0)
                       for e in track.keyframes], dtype=float).reshape(-1, 3)
     return frames, orient, delta
+
+
+def _trackPositions(track):
+    """Each entry's position and position delta per frame (the delta only with flag 0x1)."""
+    position = np.array([tuple(e.position) for e in track.keyframes], dtype=float).reshape(-1, 3)
+    velocity = np.array([tuple(e.deltaPosition) if int(e.flags) & 1 else (0.0, 0.0, 0.0)
+                         for e in track.keyframes], dtype=float).reshape(-1, 3)
+    return position, velocity
 
 
 def _trackRotations(arrays, times: np.ndarray) -> np.ndarray:
@@ -357,21 +402,30 @@ def _modelHeight(model) -> float:
 def scanKeyPops(key, model=None, *, limits: PopLimits = PopLimits(), nodes=None,
                 baseLayers: Sequence[PoseLayer] = (), lowPri: int = 1,
                 highPri: Optional[int] = None) -> dict:
-    """Find pops between KEY entries: motion the engine plays that no entry describes.
+    """Find pops at and between KEY entries: motion the engine plays that no entry describes.
 
-    Per track (the track the engine uses for each node below ``JOINTS``), over ``0 .. FRAMES``:
+    From each entry the engine moves a track with that entry's own deltas until the next entry,
+    then takes the next entry's stored values (``rdPuppet_BuildJointMatrices``). Per track (the
+    track the engine uses for each node below ``JOINTS``), over ``0 .. FRAMES``:
 
     - ``euler_flip``: between two entries, the path strays at least ``flipDetour`` degrees
       beyond the shortest turn, and the end rotation has a nearer Euler triple: the other
       form (``form: twin``) or fewer whole turns (``form: turn``). ``nearest`` is that triple.
     - ``wide_step``: the same detour with the end already in its nearest form. The step is too
-      wide for linear Euler interpolation and needs more entries.
-    - ``form_switch``: at an entry, the rotation is continuous (within 1 degree) but a component
-      changes by at least ``formJump`` degrees beyond whole turns. A layer played at full
-      weight does not show this. A partial-weight blend scales each component, so a fade or a
-      second-priority fill does show it.
+      wide for a straight line in Euler components and needs more entries.
+    - ``entry_jump``: at an entry below ``FRAMES``, the joint snaps from where the previous
+      entry's motion ends to the entry's stored values. Its rotation turns more than
+      ``entryAngle`` degrees (``angle``) or its position moves more than ``entryDistance`` JK
+      units (``distance``). ``form`` is ``twin`` or ``turn`` when the stored triple is also not
+      the triple of its rotation nearest where the motion ended (the other Euler form, or extra
+      whole turns), else None.
+    - ``form_switch``: at an entry below ``FRAMES`` that does not jump, a component changes by
+      at least ``formJump`` degrees beyond whole turns. A layer played at full weight does not
+      show this. A partial-weight blend scales each component, so a fade or a second-priority
+      fill does show it.
     - ``velocity_spike``: the joint turns ``spikeRatio`` times faster than its neighbours (see
-      ``PopLimits``). Spikes inside a flagged flip or wide step are not reported again.
+      ``PopLimits``). Spikes inside a flagged flip or wide step, or across an ``entry_jump``
+      whose rotation jumps, are not reported again.
 
     With a model, the KEY is posed with ``sith.audit.pose`` on top of ``baseLayers`` (held at
     their own frames) at priorities ``lowPri``/``highPri``. Each node's mesh-frame origin is
@@ -383,9 +437,9 @@ def scanKeyPops(key, model=None, *, limits: PopLimits = PopLimits(), nodes=None,
 
     ``nodes`` limits the position scan to these model node indices or names. By default it
     covers every node whose world frame a KEY track moves. Speeds are per second at the KEY's
-    FPS. All findings are ``review``: the KEY plays, but the motion between entries is not what
-    its entries describe. Tracks whose entries are not in increasing frame order are listed in
-    ``tracks_skipped``; ``lintKeyHeader`` reports them.
+    FPS. All findings are ``review``: the KEY plays, but its motion there is not the smooth
+    motion its entries describe. Tracks whose entries are not in increasing frame order are
+    listed in ``tracks_skipped``; ``lintKeyHeader`` reports them.
     """
     total = float(key.numFrames)
     fps = float(key.fps)
@@ -431,13 +485,30 @@ def scanKeyPops(key, model=None, *, limits: PopLimits = PopLimits(), nodes=None,
             else:
                 found.add(1, 'wide_step', **details)
 
-        # Continuous rotation, different Euler form, at each later entry.
+        # At each later entry: does the joint jump from where the previous entry's motion ends,
+        # or keep its rotation in another Euler form?
         frames, orient, delta = arrays
+        position, velocity = _trackPositions(track)
+        turned = []
         for i in range(1, len(frames)):
             if frames[i] >= total:
                 break
-            left = orient[i - 1] + delta[i - 1] * (frames[i] - frames[i - 1])
-            if rotationAngle(left, orient[i]) > 1.0:
+            span = frames[i] - frames[i - 1]
+            left = orient[i - 1] + delta[i - 1] * span
+            angle = rotationAngle(left, orient[i])
+            distance = float(np.linalg.norm(position[i - 1] + velocity[i - 1] * span - position[i]))
+            if angle > limits.entryAngle or distance > limits.entryDistance:
+                nearest = np.array(nearestEuler(left, orient[i]))
+                form = None
+                # As for euler_flip: is the stored triple further from the motion than it must be?
+                if np.sum(np.abs(nearest - left)) < np.sum(np.abs(orient[i] - left)) - 1e-6:
+                    twin = np.array(unwrapEuler(left, eulerTwin(orient[i])))
+                    form = 'twin' if np.allclose(nearest, twin) else 'turn'
+                if angle > limits.entryAngle:
+                    turned.append(float(frames[i]))
+                found.add(1, 'entry_jump', index=index, key_name=name, entry=i,
+                          frame=round(float(frames[i]), 4), angle=round(angle, 3),
+                          distance=round(distance, 6), form=form)
                 continue
             shift = np.abs(np.array(unwrapEuler(left, orient[i])) - left)
             if float(shift.max()) >= limits.formJump:
@@ -452,6 +523,8 @@ def scanKeyPops(key, model=None, *, limits: PopLimits = PopLimits(), nodes=None,
                                                     limits.spikeFloor):
             a, b = float(times[first]), float(times[last + 1])
             if any(a < end and b > begin for begin, end in explained):
+                continue
+            if any(a < frame <= b for frame in turned):     # the entry_jump already covers it
                 continue
             found.add(1, 'velocity_spike', index=index, key_name=name, frame=round(a, 4),
                       end_frame=round(b, 4), speed=round(float(speed[peak]), 3),

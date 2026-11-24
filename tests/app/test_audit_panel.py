@@ -464,7 +464,7 @@ class AuditPanelTests(SceneTestCase):
         model, _ = self.kyle_files(hip='pelvis')
         self.assertEqual(self.reseat(model), {'CANCELLED'})
         self.assertIn("0 nodes named 'k_hip'", self.reports[-1][1])
-        self.assertEqual(list((self.folder / 'reseated').iterdir()), [])
+        self.assertFalse((self.folder / 'reseated').exists())   # a refused run leaves nothing behind
         model.write_text(kyle_3do(), encoding='utf-8')
         real = keyReseat.reseatKeyFiles
 

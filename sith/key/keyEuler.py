@@ -2,8 +2,9 @@
 """Euler forms of KEY rotations, without Blender.
 
 A KEY stores rotations as (pitch, yaw, roll) degrees for ``R = Rz(yaw) Rx(pitch) Ry(roll)``
-(``rdMatrix_Build34``), and the engine moves each component linearly between entries
-(``rdPuppet_BuildJointMatrices``). Two triples for the same rotation therefore do not play the
+(``rdMatrix_Build34``). From each entry the engine moves each component with that entry's own
+deltas until the next entry (``rdPuppet_BuildJointMatrices``), and an exporter sets those deltas
+to reach the next entry's triple. Two triples for the same rotation therefore do not play the
 same way between entries: one may take the short way, the other a full turn.
 
 Every rotation has two Euler forms, ``(p, y, r)`` and ``(180 - p, y + 180, r + 180)``, and each

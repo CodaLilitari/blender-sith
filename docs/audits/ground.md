@@ -29,8 +29,8 @@ COG. The audit needs no Blender and does not change its inputs.
 ## Where the floor is
 
 The engine does not stand a character on its feet. Physics holds a walking thing at a fixed height
-above the floor it is attached to (`sithPhysics_UpdateThingPhysics`). That height is the template's
-`height`; when the template sets none, it is the model's `insertOffset.z`, but at least
+above the floor it is attached to (`sithPhysics_UpdateAttachedThingPhysics`). That height is the
+template's `height`; when the template sets none, it is the model's `insertOffset.z`, but at least
 `movesize + 0.005` (`sithPhysics_GetThingHeight`). A crouching thing is held at `movesize + 0.01`.
 The model is then drawn from the thing's position (`sithRender` hands the thing's orientation and
 position to `rdThing_Draw`). Whether the feet touch the floor is therefore up to the 3DO and the

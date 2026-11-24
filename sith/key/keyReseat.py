@@ -6,8 +6,9 @@ a few thousandths of a JK unit off its usual seat. The saber KEYs seat the hip p
 units low and push the thighs up into it to make up for it. The two armed runs shift both
 forearms about 0.004 units, and ``kystab2`` shifts the shoulders about 0.004 units. Kyle hides
 this. A character cut into close-fitting rigid pieces opens at those joints. ``reseatKey`` moves
-the joints back in the KEY data. It never changes a rotation, and it moves no joint outside the
-hip piece and the seated joints.
+the joints back in the KEY data. It never changes a rotation. It moves only the hip piece and the
+seated joints, with what hangs from them; the thighs and everything below them stay where the KEY
+put them.
 
 The rules are those of the reseat pass behind Darth Lilitari R9.10 and Lilivane R3:
 
@@ -496,12 +497,14 @@ def checkReseat(model, source, result, *, names: Optional[ReseatNames] = None, s
     Each KEY is posed alone at full weight (``sith.audit.pose``) at every ``step`` from 0 to
     ``FRAMES`` inclusive, which covers every time the engine plays. Joint frames are compared.
     Expected: no joint's orientation changes (largest difference of any rotation-matrix element,
-    at most ``rotationTolerance``), and no joint outside the hip piece and the seated joints moves
-    (at most ``frameTolerance`` JK units at whole frames and ``betweenTolerance`` between them).
-    Fixed joints are all the others: the torso, the thighs and everything below them, the root
-    and the carrier. The hip and the seated joints may move; the report gives how far and when.
-    The header, the markers, the track list and every track the pass cannot rewrite must also be
-    equal. ``status`` is ``pass`` or ``fail``.
+    at most ``rotationTolerance``), and no fixed joint moves (at most ``frameTolerance`` JK units
+    at whole frames and ``betweenTolerance`` between them). The fixed joints are every joint
+    except the hip piece and the seated joints, with everything that hangs from them; the thighs
+    and everything below them stay fixed. So the torso, the root and the carrier are fixed too.
+    The hip and the seated joints may move; the report gives how far and when. What hangs from
+    them moves with them; its own tracks must not change, like every other track the pass cannot
+    rewrite. The header, the markers and the track list must also be equal. ``status`` is
+    ``pass`` or ``fail``.
     """
     rig = _rig(model, names or ReseatNames())
     if not (math.isfinite(step) and step > 0.0):
@@ -606,6 +609,12 @@ def reseatKeyFiles(model, keyPaths: Iterable, outDir, *, standKeyPath, standFram
     instead. A KEY that needs no change is not written: install only the written files. With
     ``check``, every written file is loaded back and compared with its source by ``checkReseat``.
 
+    It never replaces a file. Before it reads anything it refuses two KEYs with the same name and
+    an ``outDir`` that already holds an entry named like one of the KEYs; names are compared
+    without regard to case, as the engine and Windows compare them. It checks the model's node
+    names (``ReseatNames``) and reads the stand KEY before it creates ``outDir``, so a run refused
+    for those reasons leaves nothing behind.
+
     The report's ``status`` is ``fail`` when a check failed, ``review`` when any KEY has a
     finding, else ``reseated`` or ``unchanged``. ``per_key`` gives each KEY's status, hip rule,
     largest shift by track index and check result.
@@ -623,7 +632,14 @@ def reseatKeyFiles(model, keyPaths: Iterable, outDir, *, standKeyPath, standFram
         target = os.path.join(str(outDir), name)
         if os.path.exists(target) and os.path.exists(path) and os.path.samefile(target, path):
             raise ValueError(f'The output folder holds the source KEY {name}; choose another output folder')
+    if os.path.isdir(outDir):
+        present = {entry.casefold() for entry in os.listdir(outDir)}
+        clash = [name for name in seenNames.values() if name.casefold() in present]
+        if clash:
+            raise ValueError(f"The output folder already holds {', '.join(clash[:3])}"
+                             f"{' and others' if len(clash) > 3 else ''}; reseatKeyFiles never replaces a file")
     model = _loadModel(model)
+    _rig(model, names or ReseatNames())      # refuse a model without the named joints before outDir exists
     seats = keySeats(loadKey(standKeyPath), standFrame) if standKeyPath is not None else modelSeats(model)
     seatSource = (f'{os.path.basename(str(standKeyPath))} frame {standFrame:g}' if standKeyPath is not None
                   else 'model rest positions')

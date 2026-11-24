@@ -3,9 +3,9 @@
 
 Where the floor is. The engine does not stand a character on its mesh. Physics holds an attached
 walking thing at a fixed height above the floor plane it is attached to
-(``sithPhysics_UpdateThingPhysics``): the template's ``height``, or when that is 0 the model's
-``insertOffset.z``, but at least ``movesize + 0.005`` (``sithPhysics_GetThingHeight``). A crouching
-thing is held at ``movesize + 0.01``. The model is drawn from the thing's own position:
+(``sithPhysics_UpdateAttachedThingPhysics``): the template's ``height``, or when that is 0 the
+model's ``insertOffset.z``, but at least ``movesize + 0.005`` (``sithPhysics_GetThingHeight``). A
+crouching thing is held at ``movesize + 0.01``. The model is drawn from the thing's own position:
 ``sithRender`` hands the thing's orientation and position to ``rdThing_Draw``, and
 ``rdThing_AccumulateMatrices`` starts from that placement. Whether the feet meet the floor is
 therefore decided by the 3DO and the KEYs alone. This module measures it.
@@ -182,10 +182,10 @@ def keySequence(key, step: float = 1.0, *, direction: Optional[Sequence[float]] 
 def thingFloorHeight(model, moveSize: float, *, height: float = 0.0, crouching: bool = False) -> float:
     """The floor's z in the posed frame for a thing at rest on flat ground, where physics holds it.
 
-    Standing, the thing's position is held ``height`` above the floor; with ``height`` 0 (the
-    template sets none) that is ``max(insertOffset.z, moveSize + 0.005)``
-    (``sithPhysics_GetThingHeight``). Crouching, it is ``moveSize + 0.01``
-    (``sithPhysics_UpdateThingPhysics``). The posed frame starts at the insert offset, so the floor
+    ``sithPhysics_UpdateAttachedThingPhysics`` holds an attached thing's position at a height
+    above the floor. Standing, it is ``height``; with ``height`` 0 (the template sets none) it is
+    ``max(insertOffset.z, moveSize + 0.005)`` (``sithPhysics_GetThingHeight``). Crouching, it is
+    ``moveSize + 0.01``. The posed frame starts at the insert offset, so the floor
     lies at ``insertOffset.z`` minus that height. JK's stock ``walkplayer`` (movesize 0.065, no
     height) on a model with Kyle's insert offset stands on z = 0 and crouches on z = 0.045114.
     Slopes, steps and the gradual pull towards that height are not modelled.

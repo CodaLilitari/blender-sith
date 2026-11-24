@@ -514,7 +514,7 @@ the right strafe (`kystrafr`, 9 of 40).
    far each KEY moves each node off its seat, and `auditArticulation` for daylight.
 2. Where seat offsets open a joint, reseat the KEYs with `sith.key.keyReseat.reseatKeyFiles`, the
    MCP tool `reseat_keys` or **Reseat KEYs** in Blender. Each writes a reseated copy of only the
-   KEYs that change, never over a source KEY. The rules:
+   KEYs that change, and none replaces a file. The rules:
    - the arm, neck and head joints go back to their standing seats;
    - the hip piece moves between the torso and the legs, which stay exactly where the animation
      put them. Axis by axis in the hip's frame: where the hip's and the thighs' offsets point
@@ -551,10 +551,10 @@ again.
 
 **What went wrong.**
 
-- The lightwhip's KEYs had pops between entries. The engine interpolates each Euler component
-  linearly between entries. A large change between entries, or a switch to the other Euler form of
-  the same rotation, swings a joint through a pose nobody authored. Three solver fixes removed the
-  pops:
+- The lightwhip's KEYs had pops between entries. From each entry the engine moves each Euler
+  component with that entry's own deltas until the next entry. A large change between entries, or
+  a switch to the other Euler form of the same rotation, swings a joint through a pose nobody
+  authored. Three solver fixes removed the pops:
   - the elbow may swing only so far per frame;
   - the hilt's roll is free once a stroke starts;
   - each frame keeps whichever of a rotation's two Euler forms lies nearer the last frame's.
@@ -597,12 +597,14 @@ again.
 - `sith.audit.keylint` ([keylint](audits/keylint.md)). Load custom KEYs with
   `loadKey(path, strictTracks=False)`, so the lint sees tracks the engine reads but the default
   loader refuses.
-  - `lintKeyHeader`: tracks at or past JOINTS, repeated tracks, entries out of order or past
-    FRAMES, JOINTS below the model's node count, and a JOINTS 64 recommendation. With a model it
-    includes `auditModelKey`.
-  - `scanKeyPops`, at quarter-frame steps: Euler flips, steps too wide for linear Euler
-    interpolation, Euler-form switches that show in fades, angular-speed spikes and, with a model,
-    jumps in node positions.
+  - `lintKeyHeader`: tracks at or past JOINTS, tracks at 64 and above in a KEY with more than 64
+    JOINTS, repeated tracks, entries out of order or past FRAMES, JOINTS below the model's node
+    count, and a JOINTS 64 recommendation. It checks the header against the target's limits
+    (markers, names, FRAMES and FPS) with or without a model. With a model it includes
+    `auditModelKey`.
+  - `scanKeyPops`, at quarter-frame steps: Euler flips, steps too wide for a straight line in
+    Euler components, jumps at an entry, Euler-form switches that show in fades, angular-speed
+    spikes and, with a model, jumps in node positions.
   - `keyPriorityReport`: which nodes a KEY drives at high and at low priority, and which it leaves
     to the layers below.
 - `seatOffsets` and `auditArticulation` on the blended poses.

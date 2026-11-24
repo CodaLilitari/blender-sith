@@ -96,9 +96,13 @@ report = reseatKeyFiles('dlil.3do', sorted(glob.glob('key/*.key')), 'reseated',
 
 `standKeyPath` is required. Pass `None` to take the seats from the model's rest positions; do
 that only when the rest pose matches the stand KEY. Only the KEYs that change are written. The
-function refuses an output folder that holds a source KEY, and two KEYs with the same file name.
-With `check=True` (the default) every written file is loaded back and checked against its
-source. `checkReseatFiles(model, pairs)` runs the same check on any `(source, result)` file pairs.
+function never replaces a file. Before it reads anything, it refuses two KEYs with the same file
+name and an output folder that already holds a file or folder named like one of the KEYs. Names
+are compared without regard to case. It checks the model's node names and reads the stand KEY
+before it creates the output folder, so a run refused for those reasons leaves nothing behind.
+Give it a new folder. With `check=True` (the default) every written file is loaded back and
+checked against its source. `checkReseatFiles(model, pairs)` runs the same check on any
+`(source, result)` file pairs.
 
 ## Read the result
 
@@ -123,9 +127,10 @@ source. `checkReseatFiles(model, pairs)` runs the same check on any `(source, re
 
 - `largest_orientation_change`: the largest change of any rotation-matrix element of any joint.
   It must be 0 (at most 1e-9).
-- `fixed_moved_at_frames` and `fixed_moved_between_frames`: how far any joint other than the hip
-  and the seated joints moved, in JK units. That is the torso, the thighs and everything below
-  them, the root and the carrier. Limits: 1e-6 at whole frames, 1e-4 between them.
+- `fixed_moved_at_frames` and `fixed_moved_between_frames`: how far any fixed joint moved, in JK
+  units. The fixed joints are every joint except the hip piece and the seated joints, with
+  everything that hangs from them; the thighs and everything below them stay fixed. So the torso,
+  the root and the carrier are fixed too. Limits: 1e-6 at whole frames, 1e-4 between them.
 - `hip_moved` and `seated_moved`: how far the hip and the seated joints moved.
 
 Each metric gives its value, the time, and the node's index and name. The header, the markers,

@@ -19,8 +19,9 @@ source.
 2. **Never edit the user's originals.** Work on copies in a new folder. The audits do not change
    their inputs. The MCP tools copy their inputs into a new job. `reseatKeyFiles` writes only into
    the folder you name, `reseat_keys` only into its job's `reseated` folder, and **Reseat KEYs**
-   only into its **Output Folder**. `removeFaces` and `reseatKey` return new objects; save them to
-   new paths.
+   only into its **Output Folder**. None of them replaces a file: `reseatKeyFiles` and **Reseat
+   KEYs** refuse a folder that already holds a file named like one of the KEYs. `removeFaces` and
+   `reseatKey` return new objects; save them to new paths.
 3. **Before and after on the same sample points.** Use the same KEYs, step, cameras and reference
    pose for both runs, and run the whole set. A fix that looks right in the flagged poses can open
    others: the first hip rule of the reseat pass did.
