@@ -75,7 +75,7 @@ A count is a lead, not a verdict. Look at each flagged pose, face or KEY before 
 or a KEY. On Mandalorian Red, knee counts in the hundreds were lines of sight into the crease of a
 bent knee: open air, not a hole. One or two lines in a pose are usually a sliver at a rim; dozens
 are an opening you can see. Compare before and after only on the same sample points: the same
-KEYs, step, cameras and reference pose.
+KEYs, step, `toEnd`, cameras and reference pose.
 
 ## The reference pose
 
