@@ -15,18 +15,20 @@ For the order in which to run them while building a character, read the
 | --- | --- | --- | --- | --- |
 | [Retail budget and detail levels](budget.md) | Vertices, texture vertices and faces per mesh, corners per face, geosets and nodes against the retail JKDF2/MOTS loader. Writes up to four identical geosets. | `auditBudget`, `budgetWarnings`, `setDetailLevels` | `audit_budget` | **Check Retail Limits**; 3DO export **Detail Levels** and **Fail Over Retail Limits** |
 | [Cut lint](segmentation.md) | Surface a cut left in the wrong rigid piece: stray islands, foreign surface, covered surface. Removes faces and caps the opening. Colours each piece. | `auditSegmentation`, `zeroRotationPose`, `testPoses`, `pieceColours`, `removeFaces` | `audit_segmentation` | **Colour Pieces** and **Restore Colours** |
-| [Joint gaps and seat offsets](articulation.md) | Lines of sight through each joint in every sampled pose. How far each KEY moves each node off its seat. | `auditArticulation`, `seatOffsets`, `referencePose`, `loadKeyFolder` | `audit_articulation` | **Audit Files** with **Joint Gaps** and **Seat Offsets** |
-| [Floor contact, slip and camera reading](ground.md) | The lowest point against the engine floor. Planted feet sliding. How long a mesh reads from the third-person camera. | `auditFloorContact`, `thingFloorHeight`, `lowestPoints`, `auditCameraReading` | `audit_ground` (floor and slip) | **Audit Files** with **Floor Contact** (no slip) |
-| [KEY lint](keylint.md) | The header and track table as the engine loads them. Pops between entries. Priorities. Track slots shared by characters in one pack. | `lintKeyHeader`, `scanKeyPops`, `keyPriorityReport`, `trackRegistry` | `lint_keys`, `audit_track_slots` | **Audit Files** with **KEY Lint** |
+| [Joint gaps and seat offsets](articulation.md) | Lines of sight through each joint that meet no polygon (daylight), in every sampled pose. How far each KEY moves each node off its seat. | `auditArticulation`, `seatOffsets`, `referencePose`, `loadKeyFolder` | `audit_articulation` | **Audit Files** with **Joint Gaps** and **Seat Offsets** |
+| [Floor contact, slip and camera reading](ground.md) | The lowest point against a floor you give, such as the engine floor from `thingFloorHeight`; without one, the rest pose's lowest point. Planted feet sliding. How long a mesh reads from the third-person camera. | `auditFloorContact`, `thingFloorHeight`, `lowestPoints`, `auditCameraReading` | `audit_ground` (floor and slip) | **Audit Files** with **Floor Contact** (no slip) |
+| [KEY lint](keylint.md) | The header and track table as the engine loads them, and the header against the target's limits. Pops at and between entries. Priorities. Track slots shared by characters in one pack. | `lintKeyHeader`, `scanKeyPops`, `keyPriorityReport`, `trackRegistry` | `lint_keys`, `audit_track_slots` | **Audit Files** with **KEY Lint** |
 | [KEY reseat](reseat.md) | Puts the joints that stock KEYs push off their seats back on them, in the KEY data. Checks that nothing else moved. | `reseatKeyFiles`, `reseatKey`, `checkReseat`, `checkReseatFiles` | `reseat_keys` | **Reseat KEYs** |
-| [MAT dithering and editions](materials.md) | Ordered dithering for Indexed MATs, limited by a mask. Both the 8-bit and the 16-bit edition from one export. | `encodeMat(..., dither=True)`, `export3do(..., textureEditions=True)` | none | 3DO export **8-bit and 16-bit Editions** and **Dither Indexed Textures**; MAT export **Dither** |
+| [MAT dithering and editions](materials.md) | Ordered dithering for Indexed MATs, limited by a mask; a pattern never adds a fullbright palette entry, one the CMP never darkens. Fullbright entries kept out of Indexed output on request. Both the 8-bit and the 16-bit edition from one export. | `encodeMat(..., dither=True, avoidFullbright=True)`, `fullbrightIndices`, `export3do(..., textureEditions=True, textureAvoidFullbright=True)` | none | 3DO export **8-bit and 16-bit Editions**, **Dither Indexed Textures** and **Avoid Fullbright Colours**; MAT export **Dither** and **Avoid Fullbright Colours** |
 
 Two checks are documented elsewhere:
 
 - **Model and KEY binding.** `sith.key.modelBinding.auditModelKey` reports the model node each KEY
   track addresses and the names that differ. See the
   [worked example](../MCP.md#will-this-key-animate-the-intended-joint). MCP tool:
-  `audit_model_key`. `lintKeyHeader` includes it when given a model.
+  `audit_model_key`. `lintKeyHeader` includes it when given a model. Without a model it runs the
+  binding audit's checks that need none (`keyTargetFindings`): text format, numbers, the target's
+  limits, unknown markers, and FRAMES and FPS.
 - **Engine-equivalent posing.** `sith.audit.pose` poses a model with KEYs the way
   `rdPuppet_BuildJointMatrices` does. Every audit that poses a model uses it. Its
   [module docstring](../../sith/audit/pose.py) gives the math and the engine rules.

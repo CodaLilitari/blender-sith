@@ -17,8 +17,8 @@ For general scene interaction, use this format-specific companion alongside the 
 | `audit_budget(path, target="JKDF2")` | Count one 3DO as stored against the retail limits: 512 vertices, 768 texture vertices and 512 faces per mesh, 24 corners per face, 4 geosets, 64 nodes. `JKDF2` or `MOTS` gives `within_limits` or `over_limits`; `IJIM` or `GRIM` gives `counts_only`. |
 | `audit_segmentation(model_path, ...)` | Cut lint: surface a cut left in the wrong rigid piece. Optional test poses from a KEY folder. |
 | `audit_articulation(model_path, key_dir, ...)` | Joint-gap sweep: daylight through each joint in every sampled pose of each KEY, plus each KEY's seat offsets. The slowest tool. |
-| `audit_ground(model_path, key_dir, ...)` | Floor contact against the engine floor, and contact slip of planted feet, for each KEY played alone. |
-| `lint_keys(key_dir, ...)` | KEY header and track table as the engine loads them, and pops between entries. With `model_path`, also the binding audit. |
+| `audit_ground(model_path, key_dir, ...)` | Floor contact against the engine floor by default, and contact slip of planted feet, for each KEY played alone. |
+| `lint_keys(key_dir, ...)` | KEY header and track table as the engine loads them, the header against the target's limits, and pops at and between entries. With `model_path`, also the binding audit. |
 | `audit_track_slots(characters, custom=18)` | Whether 2 to 8 characters' KEYs can share one pack: `slot_collision` and `slot_intrusion`. |
 | `reseat_keys(model_path, key_dir, ...)` | Reseat the KEYs of a folder for one 3DO. Writes reseated copies of the KEYs that change, only inside the job directory. |
 
@@ -62,7 +62,7 @@ Every parameter is checked before a job is created. A refused call returns a too
 
 ### The reference pose
 
-`audit_segmentation` and `audit_articulation` measure from the pose the pieces were cut in. The default is the rest pose. `reference_key` gives a KEY's pose at `reference_frame` instead, and then `zero_rotations` must be stated: `true` for characters cut with every joint straight at the stand KEY's seats, `false` to keep the KEY's rotations. A `reference_key` without `zero_rotations` is refused with that explanation. `zero_rotations: true` or a nonzero `reference_frame` without `reference_key` is refused. For Red's Kyle-skeleton characters, pass the stand KEY they were cut against with `zero_rotations: true`: stock `kystand1` for Darth Lilitari, and Biddy Blas's own `kystand1`. A wrong reference gives plausible counts and no warning.
+`audit_segmentation` and `audit_articulation` measure from the pose the pieces were cut in. The default is the rest pose. `reference_key` gives a KEY's pose at `reference_frame` instead, and then `zero_rotations` must be stated: `true` for characters cut with every joint straight at the stand KEY's seats, `false` to keep the KEY's rotations. A `reference_key` without `zero_rotations` is refused with that explanation. `zero_rotations: true` or a nonzero `reference_frame` without `reference_key` is refused. For Red's Kyle-skeleton characters, pass the stand KEY they were cut against with `zero_rotations: true`: stock `kystand1` for Darth Lilitari, and Biddy Blas's own `kystand1`. A reseat can rewrite a character's own copy of `kystand1` too, so after a reseat keep passing the stand KEY the pieces were cut against, not the reseated copy. A wrong reference gives plausible counts and no warning.
 
 ### Tool parameters
 
@@ -77,10 +77,10 @@ Every parameter is checked before a job is created. A refused call returns a too
 | `reseat_keys` | `model_path`, `key_dir`, `keys` (all), `stand_key` (none), `stand_frame` (0), `rest_seats` (false), `waist_tuck` (0.0025), `waist_lift` (0), `check` (true) |
 
 - `audit_ground`: `floor: "engine"` is where physics holds a standing player, from the template's `move_size` and `thing_height` (stock `walkplayer`: 0.065 and 0). KEYs named in `crouch_keys` play on the crouch floor; there are none by default. `crouch_keys`, `move_size` and `thing_height` are refused with any other floor. `contacts` adds contact slip for those nodes. `travel` maps movement-controlled KEY names to their (x, y) direction, for example `"kywalkf.key": [0, 1]`. Every name in `crouch_keys` and `travel` must be among the selected KEYs.
-- `lint_keys` loads each KEY the way the engine reads it (`strictTracks=False`), so it sees tracks the default loader refuses.
+- `lint_keys` loads each KEY the way the engine reads it (`strictTracks=False`), so it sees tracks the default loader refuses. It checks each header against the `target`'s limits (JOINTS, markers, names, FRAMES and FPS) with or without `model_path`; `model_path` adds the full binding audit, `joints_below_model` and position jumps.
 - `reseat_keys` takes its seats from `stand_key` at `stand_frame`, or with `rest_seats: true` from the model's rest positions. Give one of the two. Use the rest positions only when the rest pose matches the stand KEY.
 
-Each tool plays every KEY alone. `auditCameraReading`, `keyPriorityReport`, layered poses, carried weapon meshes, the joint-gap cameras and anchor settings other than `scale`, the cut-lint thresholds and joint lists, `removeFaces` and `pieceColours` run only from Python.
+Each tool plays every KEY alone. The joint sweep of `audit_articulation`, `audit_ground` and the test poses of `audit_segmentation` sample each KEY at `0, step, 2*step ...` up to `FRAMES - 1` at most, and the seat offsets stop below `FRAMES`. Sampling the last interval, up to `FRAMES` (`toEnd=True`), runs only from Python. So do `auditCameraReading`, `keyPriorityReport`, layered poses, carried weapon meshes, the joint-gap cameras and anchor settings other than `scale`, the cut-lint thresholds and joint lists, and `removeFaces`. `pieceColours` runs from Python and from **Colour Pieces** in Blender; neither it nor `removeFaces` is an MCP tool.
 
 ### What `reseat_keys` writes
 
@@ -107,25 +107,25 @@ A result has these fields:
 
 - `job_id`, `job_directory`, `audit_kind`, `exit_code`, `elapsed_seconds`, `source_unchanged` and `status`; after a timeout also `owned_tree_cleanup_succeeded`.
 - `inputs`: the source path, SHA-256 and size of the model and the reference KEY; the KEY folder with its `count`, `bytes`, `skipped` and each file's `name`, `size` and `sha256`; or, for `audit_track_slots`, each character's model and KEYs.
-- `audit`: `schema` (`blender-sith-mcp-audit-v1`), `kind`, `runtime` (Python, NumPy and Blender versions), `audit_seconds`, `parameters`, `inputs` (model counts; KEYs loaded, and those that could not be read with their errors; the reference used), one section per check, `limits` (`rows` 64, `face_indices` 256, `findings` 32) and `full_report`.
+- `audit`: `schema` (`blender-sith-mcp-audit-v1`), `kind`, `runtime` (Python, NumPy and Blender versions), `audit_seconds`, `parameters`, `inputs` (model counts; KEYs loaded, and those that could not be read with their errors; the reference used), one section per check, `limits` (`rows` 64, `face_indices` 256, `findings` 32, `geosets` 4) and `full_report`.
 - `report`: the `path`, `sha256` and `size` of the complete `report.json` in the job directory.
 - `outputs`: `reseat_keys` only, as above.
 - `progress` when the job did not complete: its `stage`, `keys_done`, `keys_total`, `current` and `elapsed_seconds`. `diagnostic` on `process_failed`.
 
-The summary keeps at most 64 rows of each list it cuts and gives the full count beside it as `<list>_total`. Face index lists keep 256 entries. The complete reports are in `report.json`.
+The summary keeps at most 64 rows of each list it cuts and gives the full count beside it as `<list>_total`. Face index lists keep 256 entries. The budget keeps the first 4 geoset rows, with `geosets_total`. The complete reports are in `report.json`.
 
 | Section | Rows |
 | --- | --- |
-| `budget` | The whole report, each geoset's `mesh_counts`, and `warnings`: one line per finding from `budgetWarnings`. |
+| `budget` | The whole report, except that `geosets` keeps the first 4 rows (`geosets_total` gives the count), each with at most 64 `mesh_counts` rows and `mesh_counts_total`. `warnings` (one line per finding from `budgetWarnings`) and `issue_counts` cover every geoset; a per-mesh line names every geoset whose mesh has the same name and count. |
 | `segmentation` | `findings`, `meshes_flagged` with the `high_faces` and `review_faces` to select, `parts`, `unplaced_meshes`, `shared_meshes`. |
 | `articulation` | `joints`, and `keys_with_daylight`, most lines first. |
 | `seat_offsets` | `nodes`, and `keys_off_seat`, largest offset first, with `keys_total`. |
 | `ground` | `nodes`, `sequences_flagged` with `sequences_total`, and `crouch_floor` with the engine floor. |
-| `lint` | `keys_flagged`, worst first; `totals` by status; `recommendations.joints_64`; at most 32 findings, four per KEY first, each with its `key` and `check` (`header`, `binding`, `pops` or `load`). |
+| `lint` | `keys_flagged`, worst first; `totals` by status; `recommendations.joints_64`; at most 32 findings, four per KEY first, each with its `key` and `check` (`header`, `binding`, `pops` or `load`); `parameters.limits`, the `PopLimits` used, `entryAngle` and `entryDistance` included. |
 | `track_slots` | Each character's custom `slots`. |
 | `reseat` | `changed_keys`; `per_key`, failed checks and unreadable KEYs first; the worst `check` values; `seats`. |
 
-A KEY that cannot be read is listed with its error, not fatal. The audits list it under `audit.inputs.keys.skipped` (for `audit_track_slots`, under each character); `lint_keys` gives it an `unreadable_key` finding and counts it as `review`; `reseat_keys` lists it in `per_key` with the status `unreadable`. (The top-level `inputs.keys.skipped` is different: it counts the links and special entries the server did not copy.) A job with no readable KEY ends as `process_failed` with a diagnostic.
+A KEY that cannot be read is listed with its error, not fatal. The audits list it under `audit.inputs.keys.skipped` (for `audit_track_slots`, under each character); `lint_keys` gives it an `unreadable_key` finding and counts it as `review`; `reseat_keys` lists it in `per_key` with the status `unreadable`. (The top-level `inputs.keys.skipped` is different: it counts the links and special entries the server did not copy.) When no KEY can be read, `audit_articulation`, `audit_ground` and `audit_segmentation` with `key_dir` end as `process_failed` with a diagnostic, and so does `audit_track_slots` when one character has no readable KEY. `lint_keys` and `reseat_keys` still end as `passed`, with section status `review`: read the lint's `totals.unreadable`, or the `unreadable` rows of the reseat's `per_key`.
 
 The job directory holds `request.json`, the input copies (`input.3do`, `reference.key`, `keys/`, `characters/<n>/`), `report.json`, `result.json`, `progress.json`, `receipt.json`, `process.json`, `stdout.log`, `stderr.log`, `diagnostic.json` after a failure, and the isolated Blender preference folders. `reseat_keys` adds `stand/` and `reseated/`.
 

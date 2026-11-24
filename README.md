@@ -1,31 +1,68 @@
 <div align="center">
 
-# 🎮 Blender Sith (Coda)
+# 🎮 Blender-Sith Agentic
 
 [![Blender](https://img.shields.io/badge/Blender-5.0+-orange.svg?style=flat&logo=blender)](https://www.blender.org/)
 [![Fork tests](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/CodaLilitari/blender-sith/actions/workflows/tests.yml?query=branch%3Amaster)
 [![License](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg?style=flat)](LICENSE)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-purple.svg?style=flat)
 
-**smlu's Blender-Sith, plus tools for building Jedi Knight and Mysteries of the Sith characters that hold up in the game**
+**smlu's Blender-Sith, plus tools for JK and MotS characters that hold up in the game**
 
 [🚀 Installation](#-installation) • [📖 Usage Guide](USAGE.md) • [🔧 Troubleshooting](USAGE.md#-troubleshooting)
 
 </div>
 
-Blender Sith (Coda) is a community fork of [Blender-Sith](https://github.com/smlu/blender-sith), the
-Sith Engine Toolkit for Blender by Crt Vavros (smlu). It keeps upstream's import, export and editing
-of 3DO models, KEY animations and MAT textures. It adds checks and tools for building player
-characters for Jedi Knight: Dark Forces II (JKDF2) and Mysteries of the Sith (MotS). Coda maintains
-it with Andrei. Like upstream, it is licensed GPL-3.0-or-later.
+Blender-Sith Agentic is a community fork of [Blender-Sith](https://github.com/smlu/blender-sith),
+the Sith Engine Toolkit for Blender by Crt Vavros (smlu). Coda maintains it with Andrei, under
+upstream's GPL-3.0-or-later. It keeps upstream's import, export and editing of 3DO models, KEY
+animations and MAT textures, and adds checks and tools for Jedi Knight: Dark Forces II (JKDF2) and
+Mysteries of the Sith (MotS) player characters. Blender shows the extension as
+**Blender Sith (Coda)**. It has upstream's id, `sith`: install one or the other, not both.
 
-It installs as a Blender extension with upstream's id, `sith`, and takes upstream's place: install
-one or the other, not both.
-
-The latest release, [v1.2.0-coda.1](docs/platform-builds.md#latest-install-route), does not
-include the model and KEY audits, the KEY reseat pass, the Sith Audits panel or the MCP audit
-tools described below. They are in this source tree, which is not a release; its manifest still
+The latest release, [v1.2.0-coda.1](docs/platform-builds.md#latest-install-route), has upstream's
+features, native pivots, the binding audit and six of the MCP tools. The rest of the table below,
+export options included, is only in this source tree, which is not a release; its manifest still
 reads 1.2.0.
+
+## Why this fork exists
+
+Rigid-piece characters on Kyle's skeleton met problems in retail JK.EXE that a still model hides:
+
+- **Joints open.** Some stock KEYs move a joint a few thousandths of a JK unit off its seat.
+- **Surface stays behind.** A cut leaves arm surface in the torso piece, in the air when the arm moves.
+- **Retail limits.** Vertex splits at sharp edges and UV seams can push a mesh over; the model fails to load.
+- **Distance and colour.** Blender wrote one geoset, and 8-bit MATs turned skin into bands.
+- **KEYs.** Euler-form switches swing joints; one character's tracks move another's pieces in a pack.
+- **Feet and weapons.** Feet sink or float, and a weapon along the camera's view reads as a stub.
+
+## How it differs from upstream
+
+The upstream column is Blender-Sith at
+[`168dadc`](https://github.com/smlu/blender-sith/commit/168dadcb1f744da833ec13f0c115fc08652b05f6),
+which this fork integrates; the formats, importers, exporters and editing tools are its work.
+[FORK.md](FORK.md) records what came from where.
+
+| Area | Upstream Blender-Sith | Blender-Sith Agentic (this source tree) |
+| --- | --- | --- |
+| Normals at hard edges | Merges corners by position, colour and normal. Custom normals and edges marked sharp keep their own corner normals; ordinary flat shading writes face normals. | The same upstream rule. The export budget counts the vertices these splits add. |
+| Model radius | Computes the model radius from the exported vertices through the pivot chain, keeps an authored `RADIUS`, and enlarges mesh radii to enclose their vertices. | The same rules. With native pivots kept or baked, each mesh radius bounds the coordinates actually written. |
+| Native pivots and attachments | Import bakes each native pivot into its mesh. Export writes zero pivots, or the offset of a Blender Pivot constraint. | Import keeps each pivot as an editable **Native Pivot**, and export writes it back, so meshes and the frames weapons attach to stay where the original put them. **Bake Pivots** writes zero pivots on request. Proposed upstream as [PR #23](https://github.com/smlu/blender-sith/pull/23). |
+| KEY-to-model binding audit | KEY import's **Validate** option checks, in Blender, that the selected model has every node the KEY animates. KEY export checks the target's joint, marker and name limits. | `auditModelKey` compares a 3DO and a KEY without Blender: the node each track addresses, names that differ, JOINTS against the node count, and the JKDF2/MOTS limits. MCP tool `audit_model_key`. |
+| Engine-equivalent posing | Not included. A KEY imports into Blender as animation. | `sith.audit.pose` poses a 3DO with KEYs the way the engine's `rdPuppet_BuildJointMatrices` does, without Blender: layers, priorities, joint frames and world vertices. |
+| Joint-gap audit and seat offsets | Not included. | `auditArticulation` counts the lines of sight through each joint that meet no polygon (daylight), in every sampled pose of every KEY. `seatOffsets` gives how far each KEY moves each node off its seat. |
+| Rigid-piece cut lint | Not included. | `auditSegmentation` finds surface a cut left in the wrong piece. `removeFaces` takes it out and caps the opening. **Colour Pieces** paints each piece in Blender. |
+| Retail budget at export, and detail levels | Imports and exports geoset 0 only. `save3do` warns about long names; vertex and face counts are not checked. | Every 2.1 export counts the model it writes against the retail limits (512 vertices, 768 texture vertices and 512 faces per mesh, 64 nodes) and warns, or stops with **Fail Over Retail Limits**. **Detail Levels** writes up to four identical geosets. **Check Retail Limits** counts before you export. |
+| MAT dithering and both editions | Writes MATs in six encodings; Indexed takes the nearest palette colour. One encoding per export. | Optional ordered 4x4 dithering for Indexed MATs, limited by a mask such as the skin. A pattern never adds a fullbright palette entry, one the CMP's light table never darkens. **Avoid Fullbright Colours** keeps those entries out altogether; it needs a JKDF2/MOTS CMP with its light table. One 3DO export can write an 8-bit Indexed and a 16-bit RGB565 edition with the same file names, in two folders; RGB565 has no transparency, so cut-outs are opaque in the 16-bit edition. |
+| KEY lint | Not included. KEY export checks the target's limits: for JKDF2 and MOTS, 64 joints, 8 markers and 31-character names. | `lintKeyHeader` (tracks past JOINTS, tracks numbered 64 and above, entry order, JOINTS below the model's node count, and the target's header limits with or without a model), `scanKeyPops` (pops at and between entries, such as Euler flips and jumps at an entry), `keyPriorityReport`, and `trackRegistry` (track slots that clash between characters in one pack). KEY export writes each converted rotation as the Euler triple nearest the previous one. |
+| Floor, slip and camera checks | Not included. | `auditFloorContact` against a floor you give it, such as the engine floor from `thingFloorHeight` (without one, the rest pose's lowest point); the slip of planted feet; and `auditCameraReading` for how long a mesh reads from the third-person camera. |
+| KEY reseat | Not included. | `sith.key.keyReseat` puts the joints that stock KEYs push off their seats back on them, changes no rotation, checks that nothing else moved, and writes only the KEYs that change. **Reseat KEYs** in Blender. |
+| MCP companion tools | Not included at `168dadc`. Proposed upstream as [PR #21](https://github.com/smlu/blender-sith/pull/21). | An optional local stdio server with 13 tools: six general ones (server information, inspection, the binding audit, geometry-only conversion, regression and packaging), which the 1.2.0 release has, then six audits and the reseat pass. |
+| Modeling-workflow guide | Not included. Upstream documents the formats and the Blender pipeline. | [Modeling workflow](docs/modeling-workflow.md): nine stages from references to a retail release, each with faults from real releases and the check that finds them. |
+| Agent guide | Not included. | [Agent guide](docs/agents.md): what an agent runs at each stage, the rules, how to read reports and how to report results. [Agent usage](docs/agent-use.md) has the exact commands. |
+
+The audits read native files and report findings to look at. They do not run the game: a person,
+or a test rig, still accepts a character in retail JK.EXE.
 
 ## Start here
 
@@ -36,56 +73,6 @@ reads 1.2.0.
 - **Blender users:** the [usage guide](USAGE.md), including the
   [Sith Audits panel](USAGE.md#-auditing-models).
 - **Audit reference:** [what each audit checks and how to read it](docs/audits/README.md).
-
-## Why this fork exists
-
-A custom JK character is cut into rigid pieces that ride on Kyle's skeleton and play the stock
-animations. Building such characters for retail JK.EXE met problems that a still model in Blender
-does not show:
-
-- **Joints open in the game.** Some stock KEYs move a joint a few thousandths of a JK unit off its
-  seat as well as turning it. Kyle's meshes overlap and hide this. A character cut into
-  close-fitting pieces shows daylight at the waist, the elbows and the shoulders.
-- **Surface stays behind.** A cut that leaves arm surface in the torso piece leaves it in the air
-  when the arm moves.
-- **Meshes go over the retail limits at export.** Export splits vertices at sharp edges and texture
-  vertices at UV seams. A mesh close to 512 vertices, 768 texture vertices or 512 faces can go over
-  without anyone editing it, and then the model fails to load.
-- **Distance and colour.** Blender exported one geoset, so detail levels were added outside Blender
-  for every release. The stock palette has no skin ramp, so skin turns into bands in 8-bit MATs.
-- **KEYs misbehave.** A switch to the other Euler form of a rotation swings a joint through a pose
-  nobody authored. KEYs declare fewer joints than the model has nodes. One character's custom
-  tracks move another character's pieces when both share a pack.
-- **Feet and weapons.** Feet sink into the floor or float above it, and a straight weapon that
-  points along the third-person camera's view reads as a stub.
-
-## How it differs from upstream
-
-The upstream column describes Blender-Sith at
-[`168dadc`](https://github.com/smlu/blender-sith/commit/168dadcb1f744da833ec13f0c115fc08652b05f6),
-the upstream commit this fork integrates. The formats, the importers and exporters and the Blender
-editing tools are upstream's work. [FORK.md](FORK.md) records what came from where.
-
-| Area | Upstream Blender-Sith | Blender Sith (Coda) |
-| --- | --- | --- |
-| Normals at hard edges | Merges corners by position, colour and normal. Custom normals and edges marked sharp keep their own corner normals; ordinary flat shading writes face normals. | The same upstream rule. The export budget counts the vertices these splits add. |
-| Model radius | Computes the model radius from the exported vertices through the pivot chain, keeps an authored `RADIUS`, and enlarges mesh radii to enclose their vertices. | The same rules. With native pivots kept or baked, each mesh radius bounds the coordinates actually written. |
-| Native pivots and attachments | Import bakes each native pivot into its mesh. Export writes zero pivots, or the offset of a Blender Pivot constraint. | Import keeps each pivot as an editable **Native Pivot**, and export writes it back, so meshes and the frames weapons attach to stay where the original put them. **Bake Pivots** writes zero pivots on request. Proposed upstream as [PR #23](https://github.com/smlu/blender-sith/pull/23). |
-| KEY-to-model binding audit | KEY import's **Validate** option checks, in Blender, that the selected model has every node the KEY animates. KEY export checks the target's joint, marker and name limits. | `auditModelKey` compares a 3DO and a KEY without Blender: the node each track addresses, names that differ, JOINTS against the node count, and the JKDF2/MOTS limits. MCP tool `audit_model_key`. |
-| Engine-equivalent posing | Not included. A KEY imports into Blender as animation. | `sith.audit.pose` poses a 3DO with KEYs the way the engine's `rdPuppet_BuildJointMatrices` does, without Blender: layers, priorities, joint frames and world vertices. |
-| Joint-gap audit and seat offsets | Not included. | `auditArticulation` counts lines of sight through each joint in every sampled pose of every KEY. `seatOffsets` gives how far each KEY moves each node off its seat. |
-| Rigid-piece cut lint | Not included. | `auditSegmentation` finds surface a cut left in the wrong piece. `removeFaces` takes it out and caps the opening. **Colour Pieces** paints each piece in Blender. |
-| Retail budget at export, and detail levels | Imports and exports geoset 0 only. `save3do` warns about long names; vertex and face counts are not checked. | Every 2.1 export counts the model it writes against the retail limits (512 vertices, 768 texture vertices and 512 faces per mesh, 64 nodes) and warns, or stops with **Fail Over Retail Limits**. **Detail Levels** writes up to four identical geosets. **Check Retail Limits** counts before you export. |
-| MAT dithering and both editions | Writes MATs in six encodings; Indexed takes the nearest palette colour. One encoding per export. | Optional ordered 4x4 dithering for Indexed MATs, limited by a mask such as the skin. One 3DO export can write an 8-bit Indexed and a 16-bit RGB565 edition with the same file names. |
-| KEY lint | Not included. KEY export checks the target's limits: for JKDF2 and MOTS, 64 joints, 8 markers and 31-character names. | `lintKeyHeader` (tracks past JOINTS, entry order, JOINTS below the model's node count), `scanKeyPops` (Euler flips and other pops between entries), `keyPriorityReport`, and `trackRegistry` (track slots that clash between characters in one pack). KEY export writes each converted rotation as the Euler triple nearest the previous one. |
-| Floor, slip and camera checks | Not included. | `auditFloorContact` against the engine floor, the slip of planted feet, and `auditCameraReading` for how long a mesh reads from the third-person camera. |
-| KEY reseat | Not included. | `sith.key.keyReseat` puts the joints that stock KEYs push off their seats back on them, changes no rotation, checks that nothing else moved, and writes only the KEYs that change. **Reseat KEYs** in Blender. |
-| MCP companion tools | Not included at `168dadc`. Proposed upstream as [PR #21](https://github.com/smlu/blender-sith/pull/21). | An optional local stdio server with 13 tools: inspection, the binding audit, geometry-only conversion, regression, packaging, six audits and the reseat pass. |
-| Modeling-workflow guide | Not included. Upstream documents the formats and the Blender pipeline. | [Modeling workflow](docs/modeling-workflow.md): nine stages from references to a retail release, each with faults from real releases and the check that finds them. |
-| Agent guide | Not included. | [Agent guide](docs/agents.md): what an agent runs at each stage, the rules, how to read reports and how to report results. [Agent usage](docs/agent-use.md) has the exact commands. |
-
-The audits read native files and report findings to look at. They do not run the game: a person,
-or a test rig, still accepts a character in retail JK.EXE.
 
 ---
 
@@ -198,8 +185,11 @@ The audits also run without Blender, in Python 3.11+ with NumPy.
 
 ### Method 1: From Release (Recommended)
 
-The 1.2.0 release has upstream's features, native pivots and the binding audit, but not the
-audits, the reseat pass or the Sith Audits panel. For those, build from source (Method 2).
+The 1.2.0 release has upstream's features, native pivots, the binding audit and six of the MCP
+tools. It does not have the audits, the reseat pass, the Sith Audits panel, the MCP audit tools or
+the export changes: the retail budget at export, **Detail Levels**, **Fail Over Retail Limits**, MAT
+dithering, **Avoid Fullbright Colours**, the 8-bit and 16-bit editions and the nearest-Euler KEY
+export. For those, build from source (Method 2).
 
 1. 📥 **Download** the chosen named extension ZIP from the [1.2.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.2.0-coda.1.md) and [package status](docs/platform-builds.md).
 2. 🔧 **Open Blender** and go to `Edit > Preferences > Add-ons`
@@ -310,7 +300,9 @@ See [tests/README.md](tests/README.md) for coverage, commands and interpolation 
 
 Blender-Sith is Copyright (C) 2019–2026 Crt Vavros. Original and modified add-on code remains under
 [GPL-3.0-or-later](LICENSE). Coda maintains the fork with Andrei. Red (Claude) ported the model and
-KEY audits from his research scripts. [FORK.md](FORK.md) credits each contribution.
+KEY audits from his research scripts. Lilitari gave the upstream PR proposals their structure and
+reviewed their public source. [FORK.md](FORK.md) and the
+[upstream PR record](docs/upstream-pr-proposals.md) credit each contribution.
 
 ---
 

@@ -137,8 +137,9 @@ different folders. Two spellings of one folder are refused before any file is
 written: the same path in another case (one folder on case-insensitive volumes,
 the macOS and Windows defaults), or two paths to one existing folder, such as a
 link or a bind mount. Every MAT of both editions is encoded before any file changes.
-The model and both editions are then published together, and a failure restores
-the previous files. Existing MATs are kept unless overwriting is enabled.
+The model and both editions are then published together, and a failure rolls the
+publication back; if that fails too, the error names the recovery files. Existing
+MATs are kept, and listed in the warnings, unless overwriting is enabled.
 `textureDither` and `textureAvoidFullbright` apply to the 8-bit edition only.
 Grim Fandango exports reject editions.
 

@@ -61,7 +61,8 @@ stage. Agents should also read the [agent guide](agents.md).
   must use the same ones.
 - **Editions.** The 16-bit edition has RGB565 MATs, for 3D acceleration. The 8-bit edition has
   Indexed MATs with the game palette, for the software renderer. Both use the same file names and
-  ship as separate GOBs.
+  ship as separate GOBs. RGB565 has no transparency: a cut-out texture, such as hair cards, is
+  opaque in the 16-bit edition. Faces with the **Translucent** flag still blend in both.
 - **Detail levels.** The 3DO's geosets. The engine picks one by the camera's distance.
 
 ## The audits
@@ -83,7 +84,7 @@ model. The [audit index](audits/README.md) lists every status.
 | Face removal with caps | `sith.model.model3doEdit` | `removeFaces` | 3 | [segmentation](audits/segmentation.md) |
 | Retail limits | `sith.audit.budget` | `auditBudget`, `budgetWarnings`; export option `failOverBudget` | 6, 8 | [budget](audits/budget.md) |
 | Detail levels | `sith.model` | `setDetailLevels`; export option `detailLevels` | 8 | [budget](audits/budget.md) |
-| Indexed dithering with masks | `sith.material.matWriter` | `encodeMat(..., dither=True)`, `MatCel(..., ditherMask)`; export option `textureDither` | 5 | [materials](audits/materials.md) |
+| Indexed dithering with masks; fullbright entries | `sith.material.matWriter` | `encodeMat(..., dither=True, avoidFullbright=True)`, `MatCel(..., ditherMask)`, `fullbrightIndices`; export options `textureDither`, `textureAvoidFullbright` | 5 | [materials](audits/materials.md) |
 | Both MAT editions in one export | `sith.model.model3doExporter` | `export3do(..., textureEditions=True)` | 5, 8 | [materials](audits/materials.md) |
 | KEY lint: JOINTS, pops, priorities, node registry | `sith.audit.keylint` | `lintKeyHeader`, `scanKeyPops`, `keyPriorityReport`, `trackRegistry`; `loadKey(..., strictTracks=False)` | 6, 7 | [keylint](audits/keylint.md) |
 | Euler forms | `sith.key.keyEuler` | `nearestEuler`, `eulerTwin`, `unwrapEuler` | 7 | [keylint](audits/keylint.md) |
@@ -92,8 +93,9 @@ model. The [audit index](audits/README.md) lists every status.
 | Reseat pass and its check | `sith.key.keyReseat` | `reseatKeyFiles`, `reseatKey`, `checkReseat`, `checkReseatFiles`, `keySeats` | 7 | [reseat](audits/reseat.md) |
 
 In the Blender 3DO export dialog the export options are **Detail Levels**, **Fail Over Retail
-Limits**, **8-bit and 16-bit Editions** and **Dither Indexed Textures** (see
-[USAGE](../USAGE.md#-exporting-3do-models)).
+Limits**, **8-bit and 16-bit Editions**, **Dither Indexed Textures** and **Avoid Fullbright
+Colours** (see [USAGE](../USAGE.md#-exporting-3do-models)). They are in this source tree, not in
+the 1.2.0 release.
 
 ## The stages
 
@@ -127,16 +129,18 @@ files ([USAGE](../USAGE.md#-auditing-models)).
 | 2. Body and scale | `poseModel`, `auditFloorContact`, `lowestPoints` | `audit_ground` | **Audit Files** with **Floor Contact** |
 | 3. Rigid pieces | `auditSegmentation`, `pieceColours`, `removeFaces` | `audit_segmentation` | **Colour Pieces** and **Restore Colours** |
 | 4. Caps and pivots | `auditArticulation` | `audit_articulation` | **Audit Files** with **Joint Gaps** |
-| 5. Textures and editions | `encodeMat(..., dither=True)`, `export3do(..., textureEditions=True)` | none | 3DO export: **8-bit and 16-bit Editions**, **Dither Indexed Textures** |
+| 5. Textures and editions | `encodeMat(..., dither=True, avoidFullbright=True)`, `export3do(..., textureEditions=True)` | none | 3DO export: **8-bit and 16-bit Editions**, **Dither Indexed Textures**, **Avoid Fullbright Colours** |
 | 6. Hierarchy and node plan | `auditBudget`, `auditModelKey`, `trackRegistry` | `audit_budget`, `audit_model_key`, `audit_track_slots` | **Check Retail Limits** |
 | 7. Animations | `seatOffsets`, `auditArticulation`, `reseatKeyFiles`, `lintKeyHeader`, `scanKeyPops`, `keyPriorityReport`, `auditFloorContact`, `auditCameraReading` | `audit_articulation` (seat offsets included), `reseat_keys`, `lint_keys`, `audit_ground` | **Audit Files** (**Joint Gaps**, **Seat Offsets**, **Floor Contact**, **KEY Lint**) and **Reseat KEYs** |
 | 8. Packaging | `auditBudget`, `setDetailLevels`, `trackRegistry` | `audit_budget`, `audit_track_slots` | 3DO export: **Detail Levels**, **Fail Over Retail Limits**; **Check Retail Limits** |
 | 9. Acceptance | none; a game test | none | none |
 
 Some checks run only from Python: `removeFaces`, `keyPriorityReport`, `auditCameraReading`, carried
-weapon meshes (`CarriedMesh`) and layered poses (`PoseSequence`). The MCP tools and the panel play
-each KEY alone. Contact slip of planted feet runs from Python and from `audit_ground` with
-`contacts`. The panel's **Floor Contact** measures only the floor and floating feet.
+weapon meshes (`CarriedMesh`), layered poses (`PoseSequence`) and sampling a KEY's last interval
+(`toEnd=True`). The MCP tools and the panel play each KEY alone. Their joint sweeps, floor checks
+and cut-lint test poses sample it up to `FRAMES - 1` at most; the engine plays on to `FRAMES`.
+Contact slip of planted feet runs from Python and from `audit_ground` with `contacts`. The panel's
+**Floor Contact** measures only the floor and floating feet.
 
 ## 1. References
 
@@ -214,9 +218,12 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 **Checks.**
 
 - `sith.audit.pose.restPose` and `poseModel` pose the rig as the engine does.
-- `sith.audit.ground.auditFloorContact` gives each KEY's lowest point against the floor.
-  `lowestPoints` compares it with stock Kyle's, sample by sample. The stock KEYs are not clean on
-  Kyle either, so compare KEY by KEY ([ground](audits/ground.md)).
+- `sith.audit.ground.auditFloorContact` gives each KEY's lowest point against the floor you pass:
+  `floor=thingFloorHeight(model, 0.065)` for the engine floor of the stock player template, and
+  `thingFloorHeight(model, 0.065, crouching=True)` as the crouch KEYs' own floor. Without `floor`
+  it measures from the rest pose's lowest point, which is not the engine floor.
+  `lowestPoints` compares the lowest point with stock Kyle's, sample by sample. The stock KEYs are
+  not clean on Kyle either, so compare KEY by KEY ([ground](audits/ground.md)).
 - Through MCP: `audit_ground` with the engine floor (`floor: "engine"`, the default). Name the
   crouch KEYs in `crouch_keys`; it has none by default. In Blender: **Audit Files** with **Floor
   Contact**, whose **Crouch KEYs** default to `kycrchgn.key, kycrchbk.key`.
@@ -276,7 +283,10 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
   zero rotation, as Darth Lilitari, Lilivane and Biddy Blas were. Start with `high` findings.
   `review` findings are mostly the normal overlaps at joints.
 - `sith.model.model3doEdit.removeFaces` removes faces from a copy of the model and closes each
-  opening with caps that take the surrounding material and texture vertices.
+  opening with caps that take the surrounding material and texture vertices. A cap never joins two
+  points that an edge of the mesh already joins, and never has three corners of one face the mesh
+  already has. A loop it cannot cap under that rule stays open and is listed in `unclosed` with a
+  `reason`. `repeated_edges_after` should not exceed `repeated_edges_before`.
   `sith.audit.segmentation.pieceColours` gives each node, mesh or part a stable colour for the
   solid-colour view.
 - Through MCP: `audit_segmentation`, with `reference_key` and `zero_rotations: true` for these
@@ -390,7 +400,11 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 4. Caps and lids sample the master near their joint. Painting there changes them too.
 5. Write both editions from the same bake: RGB565 for 3D acceleration, and Indexed with the game's
    CMP for the software renderer. Dither the skin only, through a mask. Everything else takes the
-   nearest colour.
+   nearest colour. Nearest colour can pick a fullbright entry, one the CMP never darkens, which
+   glows in shadow; **Avoid Fullbright Colours** keeps those entries out of every 8-bit texture of
+   the export. Export a texture meant to glow, such as eyes, without it. The 16-bit edition has no
+   transparency: cut-out texels, such as hair cards, are opaque there. Faces with the
+   **Translucent** flag still blend in both editions.
 6. Before repainting a released character, rebuild its MATs from their sources and check that they
    match the shipped MATs byte for byte. Biddy Blas's MAT build does.
 7. View each edition in its own renderer.
@@ -400,8 +414,12 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 - In the 3DO export, **8-bit and 16-bit Editions** (`export3do(..., textureEditions=True)`)
   writes both MAT sets with the same names, into `mat8` and `mat16` by default. **Dither Indexed
   Textures** (`textureDither=True`) dithers the 8-bit edition, only where the material's
-  `sith_dither_mask_<cel>` image allows. Outside Blender, `encodeMat(..., dither=True)` with a
-  `MatCel` mask does the same ([materials](audits/materials.md)).
+  `sith_dither_mask_<cel>` image allows; a material without one dithers every texel the palette
+  has no close colour for. **Avoid Fullbright Colours** (`textureAvoidFullbright=True`) needs a
+  JKDF2/MOTS CMP with its light table. Outside Blender, `encodeMat(..., dither=True)` with a
+  `MatCel` mask does the same, and `fullbrightIndices(palette)` lists the fullbright entries
+  ([materials](audits/materials.md)).
+- Read the export's warnings: they name each image whose alpha the 16-bit edition discards.
 - Decode both editions with the CMP and compare them with the master.
 - Render the deep bends and head turns. Dark polygons are not daylight.
 
@@ -771,8 +789,8 @@ the rig.
 
 ## Release checklist
 
-- [ ] Before-and-after audits on the same sample points: the same KEYs, frames and cameras. The
-      README gives both counts, per joint and per KEY.
+- [ ] Before-and-after audits on the same sample points: the same KEYs, step and `toEnd`, cameras,
+      reference pose and floor. The README gives both counts, per joint and per KEY.
 - [ ] The previous release's folder left as it was.
 - [ ] Every changed file listed, with a count against the previous release. Every untouched file
       byte-identical, and untouched meshes equal number for number.
@@ -802,8 +820,13 @@ The audits run without Blender. Load the model and the KEY folder once and pass 
 check. This pass covers the budget, the cut lint, the floor and stages 6 and 7; each audit's own
 page has its options.
 
+The reference pose and the seats come from the stand KEY the pieces were cut against, given here by
+its own path. For a reseated set of stock KEYs that is the stock `kystand1.key`, not the set's own
+copy, which the reseat can rewrite.
+
 ```python
 from sith.model.model3doLoader import load3do
+from sith.key.keyLoader import loadKey
 from sith.audit.pose import PoseLayer, poseModel
 from sith.audit.budget import auditBudget, budgetWarnings
 from sith.audit.segmentation import auditSegmentation, zeroRotationPose
@@ -813,7 +836,7 @@ from sith.audit.ground import auditFloorContact, keySequence, thingFloorHeight
 
 model, _ = load3do('character.3do')
 keys = loadKeyFolder('key')                  # {file name: KEY}, sorted by name
-stand = keys['kystand1.key']
+stand = loadKey('stock/kystand1.key')        # the stand KEY the pieces were cut against
 
 budget = auditBudget(model, 'JKDF2')
 print('budget', budget['status'])

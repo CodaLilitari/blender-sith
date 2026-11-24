@@ -119,7 +119,10 @@ export/
 Use **Indexed** for the original JKDF2, MOTS and DroidWorks engines. Grim requires
 Indexed and a CMP. A `//` palette path is relative to the blend file.
 
-With editions, the model and both folders are written together or not at all:
+With editions, every MAT of both editions is encoded before any file is written. The
+model and both folders are then written in one step, which is rolled back if it fails.
+Existing MATs are kept, and named in the warnings, unless **Overwrite Existing MAT
+Files** is on:
 
 ```text
 export/
@@ -440,8 +443,8 @@ Text `<3DO file> - <check>`: a summary, then the complete report.
 | --- | --- | --- |
 | **KEY Folder** | Blank | The KEYs to audit. Blank uses the `key` folder beside the 3DO. |
 | **KEY Files** | Blank | Comma-separated file names in the KEY folder, for a shorter run. Blank audits every `.key` file. Names match without case, as in the game; two files whose names differ only in case are refused. |
-| **Step** | 2 | Sample each KEY every **Step** frames from frame 0. |
-| **Joint Gaps** | On | Find lines of sight through each joint in every sampled pose ([joint gaps](docs/audits/articulation.md)). The slowest check. |
+| **Step** | 2 | Sample each KEY every **Step** frames from frame 0, up to one frame before its end (`FRAMES - 1`) at most. |
+| **Joint Gaps** | On | Find lines of sight through each joint that meet no polygon (daylight), in every sampled pose ([joint gaps](docs/audits/articulation.md)). The slowest check. |
 | **Seat Offsets** | On | Measure how far each KEY moves each node from its seat in the reference pose. |
 | **Floor Contact** | On | Find samples where the model goes under the engine floor or its lowest point floats above it ([floor contact](docs/audits/ground.md)). |
 | **KEY Lint** | On | Check each KEY's header, track table and the motion between its entries ([KEY lint](docs/audits/keylint.md)). |
@@ -490,7 +493,7 @@ the complete report.
 | **Stand Frame** | 0 | Shown for **Stand KEY**: the frame of that KEY. |
 | **Waist Tuck** | 0.0025 | The most of the thighs' leftover push into the hip that goes to the waist as a small overlap, in JK units. |
 | **Waist Lift** | 0 | How far the hip may follow the torso up where a waist gap is left. The hip joints open by as much. Lilivane R3 used 0.0015. |
-| **Check** | On | Load each written KEY back and pose it against its source: no rotation may change, and no joint but the hip and the seated joints may move. A failed check is an error; do not install that KEY. |
+| **Check** | On | Load each written KEY back and pose it against its source: no rotation may change, and no joint may move except the hip piece and the seated joints, with what hangs from them. The thighs and everything below them stay fixed. A failed check is an error; do not install that KEY. |
 | **Output Folder** | Blank | Required. The folder for the reseated KEYs. It must not be the KEY folder or hold a file named like one of the KEYs. |
 
 > ⚠️ A GOB's KEYs replace the stock ones for every player model in that

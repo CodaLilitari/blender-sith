@@ -68,13 +68,19 @@ seats = seatOffsets(model, keys)
 ```
 
 Characters built the way Red builds Kyle-skeleton characters are cut with the standing KEY's seats
-and zero rotation, not in their 3DO rest pose. Give that pose as the reference:
+and zero rotation, not in their 3DO rest pose. Give that pose as the reference, from the standing
+KEY the pieces were cut against:
 
 ```python
-stand = keys['kystand1.key']
+from sith.key.keyLoader import loadKey
+
+stand = loadKey('stock/kystand1.key')   # the standing KEY the pieces were cut against
 report = auditArticulation(model, keys, reference=referencePose(model, stand, 0, zeroRotations=True))
 seats = seatOffsets(model, keys, reference=referencePose(model, stand))
 ```
+
+Load it from its own path. A reseat can rewrite a character's own copy of `kystand1.key` too;
+keep the one the pieces were cut against, the stock one for Darth Lilitari.
 
 Options of `auditArticulation`:
 
