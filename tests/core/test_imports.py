@@ -32,6 +32,7 @@ from sith.audit.pose import PoseLayer, poseModel, rotationMatrix
 from sith.audit.budget import auditBudget, budgetWarnings
 from sith.audit.segmentation import auditSegmentation, pieceColours
 from sith.audit.ground import auditCameraReading, auditFloorContact, CarriedMesh
+from sith.audit.articulation import auditArticulation, referencePose, seatOffsets
 '''
         # Blender's embedded Python executable is blender.exe, not a Python CLI.
         if 'bpy' in sys.modules:
