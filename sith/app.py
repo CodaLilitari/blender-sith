@@ -1272,20 +1272,30 @@ class RestoreColours(bpy.types.Operator):
 
 
 def _audit_key_paths(folder: Path, names: str):
-    """Regular .key files in ``folder`` by name, sorted without case; ``names`` selects some."""
-    available = {path.name.casefold(): path for path in folder.iterdir()
-                 if path.is_file() and path.suffix.casefold() == '.key'}
-    if not names.strip():
-        return sorted(available.values(), key=lambda path: (path.name.casefold(), path.name))
-    chosen = []
-    for name in (part.strip() for part in names.split(',')):
-        if not name:
-            continue
-        if Path(name).name != name or name.casefold() not in available:
-            raise ValueError(f"The KEY folder has no file named '{name}'")
-        if available[name.casefold()] not in chosen:
-            chosen.append(available[name.casefold()])
-    return sorted(chosen, key=lambda path: (path.name.casefold(), path.name))
+    """Regular .key files in ``folder`` by name, sorted without case; ``names`` selects some.
+
+    Names are compared without case, as the engine finds KEYs. When two files share a selected
+    name in different case (or, with no selection, any name), either could be the KEY meant, so
+    the folder is refused, as the MCP server refuses it.
+    """
+    available = {}
+    for path in folder.iterdir():
+        if path.is_file() and path.suffix.casefold() == '.key':
+            available.setdefault(path.name.casefold(), []).append(path)
+    wanted = list(available)
+    if names.strip():
+        wanted = []
+        for name in (part.strip() for part in names.split(',')):
+            if not name:
+                continue
+            if Path(name).name != name or name.casefold() not in available:
+                raise ValueError(f"The KEY folder has no file named '{name}'")
+            if name.casefold() not in wanted:
+                wanted.append(name.casefold())
+    for name in wanted:
+        if len(available[name]) > 1:
+            raise ValueError('KEY names differ only in case: ' + ', '.join(sorted(path.name for path in available[name])))
+    return sorted((available[name][0] for name in wanted), key=lambda path: (path.name.casefold(), path.name))
 
 
 class AuditFiles(bpy.types.Operator, ImportHelper):

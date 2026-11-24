@@ -382,6 +382,31 @@ class AuditPanelTests(SceneTestCase):
                 self.assertEqual(self.reports[-1][0], {'ERROR'})
         self.assertFalse([t for t in bpy.data.texts if t.name.startswith('boxes.3do')])
 
+    def test_key_names_that_differ_only_in_case_are_refused_where_selected(self):
+        model, keys, _ = self.write_files()
+        (keys / 'LIFT.KEY').write_bytes((keys / 'lift.key').read_bytes())
+        if sum(path.name.casefold() == 'lift.key' for path in keys.iterdir()) < 2:
+            self.skipTest('case-insensitive file system: LIFT.KEY is lift.key')
+        before = self.files()
+        clash = 'KEY names differ only in case: LIFT.KEY, lift.key'
+        for options in (dict(), dict(key_files='lift.key'), dict(key_files='still.key, Lift.Key')):
+            with self.subTest(audit=options):
+                self.reports.clear()
+                self.assertEqual(self.audit(model, **options), {'CANCELLED'})
+                self.assertEqual(self.reports[-1], ({'ERROR'}, f'Cannot audit the files: {clash}'))
+        for options in (dict(), dict(key_files='LIFT.key')):
+            with self.subTest(reseat=options):
+                self.reports.clear()
+                self.assertEqual(self.reseat(model, **options), {'CANCELLED'})
+                self.assertEqual(self.reports[-1], ({'ERROR'}, f'Cannot reseat the KEYs: {clash}'))
+        self.assertFalse((self.folder / 'reseated').exists())
+        self.assertEqual(self.files(), before)
+        self.assertFalse(bpy.data.texts)
+        # A selection without the shared name runs on the files it names.
+        self.assertEqual(self.audit(model, key_files='still.key', floor_contact=False, key_lint=False), {'FINISHED'})
+        gaps = report_json(bpy.data.texts['boxes.3do - Joint Gaps'])
+        self.assertEqual([row['name'] for row in gaps['keys']], ['still.key'])
+
     # Reseat KEYs
 
     def kyle_files(self, hip='k_hip'):

@@ -422,7 +422,7 @@ Text `<3DO file> - <check>`: a summary, then the complete report.
 | Option | Default | What it does |
 | --- | --- | --- |
 | **KEY Folder** | Blank | The KEYs to audit. Blank uses the `key` folder beside the 3DO. |
-| **KEY Files** | Blank | Comma-separated file names in the KEY folder, for a shorter run. Blank audits every `.key` file. |
+| **KEY Files** | Blank | Comma-separated file names in the KEY folder, for a shorter run. Blank audits every `.key` file. Names match without case, as in the game; two files whose names differ only in case are refused. |
 | **Step** | 2 | Sample each KEY every **Step** frames from frame 0. |
 | **Joint Gaps** | On | Find lines of sight through each joint in every sampled pose ([joint gaps](docs/audits/articulation.md)). The slowest check. |
 | **Seat Offsets** | On | Measure how far each KEY moves each node from its seat in the reference pose. |
@@ -467,7 +467,7 @@ the complete report.
 | Option | Default | What it does |
 | --- | --- | --- |
 | **KEY Folder** | Blank | The KEYs to reseat. Blank uses the `key` folder beside the 3DO. Nothing is written into it. |
-| **KEY Files** | Blank | Comma-separated file names in the KEY folder. Blank reseats every `.key` file. |
+| **KEY Files** | Blank | Comma-separated file names in the KEY folder. Blank reseats every `.key` file. Names match without case, as in the game; two files whose names differ only in case are refused. |
 | **Seats** | Stand KEY | Where each joint's seat comes from: **Stand KEY**, or **Model Rest Positions** only when the rest pose matches the stand KEY. |
 | **Stand KEY File** | `kystand1.key` | Shown for **Stand KEY**: a file name in the KEY folder, or a path. |
 | **Stand Frame** | 0 | Shown for **Stand KEY**: the frame of that KEY. |
