@@ -70,11 +70,20 @@ Recovery may leave missing geometry or joints.
 | **Export Vertex Colors** | Off | Include the active vertex-color layer. |
 | **Sync Mesh List with Node Hierarchy** | On | Order exported meshes to follow the joint hierarchy. |
 | **Bake Pivots** | Off | Write zero pivots, retaining the surface in exported vertices. Use this to discard obsolete native offsets or recover the earlier zero-pivot workflow. The Blender scene is unchanged. |
+| **Detail Levels** | 1 | Write this many geosets, 1 to 4, each a full copy of the model. The game picks a geoset by distance, so copies keep full detail far away. |
+| **Fail Over Retail Limits** | Off | Shown for 2.1. Stop the export, writing nothing, when the model is over the JKDF2/MOTS limits. When off, the export only warns. |
 | **Export Textures to MAT** | Off | Export the model's image textures; reveals the options below. |
 
 Disable **Sync Mesh List with Node Hierarchy** to keep Blender traversal order instead.
 
-> ⚠️ Export includes the active model's whole hierarchy, not every selected model. Only LOD 0 is imported and exported.
+Every 2.1 export is checked against the retail JKDF2/MOTS limits: 512 vertices,
+768 texture vertices and 512 faces per mesh, 24 corners per face, 4 geosets and
+64 joints. The check counts the exported model: vertices split at sharp edges
+and texture vertices at UV seams, so a mesh can go over without being edited. Each problem
+is reported as a warning that names the mesh and how far it is over; see the
+[budget notes](docs/audits/budget.md).
+
+> ⚠️ Export includes the active model's whole hierarchy, not every selected model. Only LOD 0 is imported; **Detail Levels** writes copies of it, not separate LOD meshes.
 
 ### Exporting Model Textures
 
@@ -99,10 +108,32 @@ export/
 | **Encoding** | Encode textures in the selected [format](#encodings). Defaults to RGBA32; selecting 2.1 or Grim initially selects Indexed. |
 | **ColorMap File** | Use this CMP palette for Indexed encoding; shown for Indexed only. Relative paths are beside the 3DO. |
 | **Generate Mipmaps** | When enabled, create smaller texture levels down to 1x1. On by default; hidden for Grim, which uses the base image only. |
-| **Overwrite Existing MAT Files** | When enabled, replace existing MATs in the output folder. Off by default. |
+| **Overwrite Existing MAT Files** | When enabled, replace existing MATs in the output folders. Off by default. |
+| **8-bit and 16-bit Editions** | When enabled, write every MAT twice with the same name: Indexed with the **ColorMap File** into the 8-bit folder and RGB 565 into the 16-bit folder. Replaces **MAT Directory** and **Encoding**. Off by default; hidden for Grim. |
+| **8-bit MAT Directory** | Folder for the Indexed edition; default `mat8` beside the 3DO. Shown with editions. |
+| **16-bit MAT Directory** | Folder for the RGB 565 edition; default `mat16` beside the 3DO. It must differ from the 8-bit folder. Shown with editions. |
+| **Dither Indexed Textures** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color, such as skin. Off by default; shown for Indexed and editions. |
 
 Use **Indexed** for the original JKDF2, MOTS and DroidWorks engines. Grim requires
 Indexed and a CMP. A `//` palette path is relative to the blend file.
+
+With editions, the model and both folders are written together or not at all:
+
+```text
+export/
+  example_cube.3do
+  mat8/
+    checker.mat    (Indexed, for the software renderer)
+  mat16/
+    checker.mat    (RGB 565, for 3D acceleration)
+```
+
+Dithering keeps colors the palette matches closely as one solid color. To dither
+only part of a texture, such as the skin, add an Image custom property named
+`sith_dither_mask_0` to the material (`_1`, `_2` for later cels). Texels whose
+mask is white (red channel 0.5 or more) may dither; the rest use the nearest color.
+The mask must have the same size as the texture. See the
+[material notes](docs/audits/materials.md).
 
 Materials export their image textures and bound animation cels, not procedural
 shaders or preview lighting. Bake procedural textures to images first.
@@ -254,6 +285,7 @@ Or use the **Material Specials** dropdown beside the slots to export the active 
 | **Target** | **Standard** for ordinary Sith MATs; **Grim Fandango** for Grim-compatible indexed output. Standard is the default. |
 | **Encoding** | Choose from the six encodings below. Defaults to RGBA32; fixed to Indexed for Grim. |
 | **ColorMap File** | Use this CMP palette for Indexed encoding; shown for Indexed only. Relative paths are beside this MAT; `//` paths are relative to the blend file. |
+| **Dither** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color. Off by default; shown for Indexed only. A material's `sith_dither_mask_<cel>` image limits it. |
 | **Generate Mipmaps** | When enabled, create smaller texture levels down to 1x1. On by default; hidden for Grim, which stores only the base image. |
 | **Overwrite Existing MAT** | When enabled, allow replacing the existing MAT, with save-dialog confirmation. Off by default. |
 

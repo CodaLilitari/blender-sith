@@ -264,6 +264,10 @@ class ExportMat(bpy.types.Operator, ExportHelper):
         name='Overwrite Existing MAT', default=False, update=_on_mat_overwrite_update,
         description='Allow replacement of an existing MAT, with file-browser confirmation. Disabled by default',
     )
+    dither: bpy.props.BoolProperty(
+        name='Dither', default=False,
+        description='Indexed only: where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid. A material image in sith_dither_mask_<cel> limits dithering to its white texels',
+    )
 
     _source = None
 
@@ -275,6 +279,7 @@ class ExportMat(bpy.types.Operator, ExportHelper):
         row.prop(self, 'encoding')
         if self.encoding == 'INDEXED':
             layout.prop(self, 'cmp_file')
+            layout.prop(self, 'dither')
         if self.target != 'GRIM':
             layout.prop(self, 'generate_mipmaps')
         layout.prop(self, 'overwrite_existing')
@@ -308,7 +313,8 @@ class ExportMat(bpy.types.Operator, ExportHelper):
         try:
             written = exportMat(self._source, self.filepath, self.encoding, self.cmp_file,
                                 overwrite=self.overwrite_existing, generateMipmaps=self.generate_mipmaps,
-                                grim=self.target == 'GRIM', warnings=warnings)
+                                grim=self.target == 'GRIM', warnings=warnings,
+                                dither=getattr(self, 'dither', False) and self.encoding == 'INDEXED')
         except (ImportError, OSError, ReferenceError, RuntimeError, ValueError) as error:
             self.report({'ERROR'}, f'Cannot export MAT: {error}')
             return {'CANCELLED'}
@@ -618,6 +624,20 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
         default     = False,
     )
 
+    detail_levels: bpy.props.IntProperty(
+        name        = 'Detail Levels',
+        description = 'Number of geosets to write, 1 to 4, each a copy of the full model. The game chooses a geoset by distance, so copies keep full detail at every distance. 1 writes a single geoset, as before',
+        default     = 1,
+        min         = 1,
+        max         = 4,
+    )
+
+    fail_over_budget: bpy.props.BoolProperty(
+        name        = 'Fail Over Retail Limits',
+        description = '2.1 exports are checked against the JKDF2/MOTS limits: 512 vertices, 768 texture vertices and 512 faces per mesh, 24 corners per face, 4 geosets and 64 joints. Enable to stop the export, writing nothing, instead of warning',
+        default     = False,
+    )
+
     export_textures: bpy.props.BoolProperty(
         name='Export Textures to MAT', default=False,
         description='Write the model\'s image textures and all bound cels to the MAT directory. Exports image pixels, not procedural shaders or preview lighting',
@@ -639,25 +659,53 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
         name='Overwrite Existing MAT Files', default=False,
         description='Replace existing MAT files in the export folder. Disabled by default: existing MATs are kept and reported',
     )
+    texture_editions: bpy.props.BoolProperty(
+        name='8-bit and 16-bit Editions', default=False,
+        description='Write every MAT twice under the same name: Indexed with the ColorMap File in the 8-bit MAT Directory, and RGB 565 in the 16-bit MAT Directory. Replaces Encoding and MAT Directory',
+    )
+    texture_directory_8bit: bpy.props.StringProperty(
+        name='8-bit MAT Directory', default='mat8',
+        description='Folder for the Indexed edition. Default mat8 is beside the exported 3DO; other relative paths resolve there too. Absolute paths and blend-relative // paths are accepted',
+    )
+    texture_directory_16bit: bpy.props.StringProperty(
+        name='16-bit MAT Directory', default='mat16',
+        description='Folder for the RGB 565 edition; it must differ from the 8-bit folder. Default mat16 is beside the exported 3DO; other relative paths resolve there too',
+    )
+    texture_dither: bpy.props.BoolProperty(
+        name='Dither Indexed Textures', default=False,
+        description='Where the CMP has no close color, such as skin, use an ordered 4x4 pattern of two palette colors. Colors the palette matches stay solid. A material image in sith_dither_mask_0 limits dithering to its white texels',
+    )
 
     obj = None
 
     def draw(self, context):
         layout = self.layout
         layout.prop(self, 'version')
+        grim = self.version == Model3doFileFormat.GrimFandango.name
         if self.version in (Model3doFileVersion.Version2_1.name, Model3doFileFormat.GrimFandango.name):
             layout.prop(self, 'absolute_uv')
         layout.prop(self, 'export_vert_colors')
         layout.prop(self, 'sync_mesh_list')
         layout.prop(self, 'bake_pivots')
+        layout.prop(self, 'detail_levels')
+        if self.version == Model3doFileVersion.Version2_1.name:
+            layout.prop(self, 'fail_over_budget')
         layout.prop(self, 'export_textures')
         if self.export_textures:
             textures = layout.column()
-            textures.prop(self, 'texture_directory')
-            textures.prop(self, 'texture_encoding')
-            if self.texture_encoding == 'INDEXED':
+            editions = getattr(self, 'texture_editions', False) and not grim
+            if not grim:
+                textures.prop(self, 'texture_editions')
+            if editions:
+                textures.prop(self, 'texture_directory_8bit')
+                textures.prop(self, 'texture_directory_16bit')
+            else:
+                textures.prop(self, 'texture_directory')
+                textures.prop(self, 'texture_encoding')
+            if editions or self.texture_encoding == 'INDEXED':
                 textures.prop(self, 'texture_cmp_file')
-            if self.version != Model3doFileFormat.GrimFandango.name:
+                textures.prop(self, 'texture_dither')
+            if not grim:
                 textures.prop(self, 'texture_mipmaps')
             textures.prop(self, 'overwrite_textures')
 
@@ -687,12 +735,21 @@ class ExportModel3do(bpy.types.Operator, ExportHelper):
                        else Model3doFileVersion[self.version])
             if version not in (Model3doFileVersion.Version2_1, Model3doFileFormat.GrimFandango):
                 self.absolute_uv = False
+            # Hidden options keep their values; pass only those that the dialog shows.
+            # Scripted stand-ins may predate these options and use their defaults.
+            editions = getattr(self, 'texture_editions', False) and version != Model3doFileFormat.GrimFandango
+            dither = getattr(self, 'texture_dither', False) and (editions or self.texture_encoding == 'INDEXED')
             warnings = []
             export3do(self.obj, self.filepath, version, self.absolute_uv, self.export_vert_colors, self.sync_mesh_list,
                       bakePivots=self.bake_pivots,
                       warnings=warnings, exportTextures=self.export_textures, textureEncoding=self.texture_encoding,
                       texturePalette=self.texture_cmp_file, overwriteTextures=self.overwrite_textures,
-                      generateMipmaps=self.texture_mipmaps, textureDirectory=self.texture_directory)
+                      generateMipmaps=self.texture_mipmaps, textureDirectory=self.texture_directory,
+                      detailLevels=getattr(self, 'detail_levels', 1),
+                      failOverBudget=getattr(self, 'fail_over_budget', False),
+                      textureDither=dither, textureEditions=editions,
+                      textureDirectory8bit=getattr(self, 'texture_directory_8bit', 'mat8'),
+                      textureDirectory16bit=getattr(self, 'texture_directory_16bit', 'mat16'))
         except (AssertionError, ImportError, ValueError, OSError, RuntimeError) as e:
             print(f"\nAn exception was encountered while exporting object '{self.obj.name}' to 3DO format!\nError: {e}")
             self.report({'ERROR'}, f'Error: {e}')

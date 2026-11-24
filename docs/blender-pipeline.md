@@ -610,7 +610,7 @@ frame zero. The exported frame count remains `scene.frame_end + 1`.
 
 | Data | Core codec | Blender round trip |
 | --- | --- | --- |
-| Extra geosets | Model resource retains them | LOD 0 only |
+| Extra geosets | Model resource retains them | LOD 0 only; export can repeat it as identical detail levels |
 | Original pivots | Retained in model fields | Baked for editing; local metadata restores the native pivot/mesh frame on export |
 | Shared or unbound mesh records | Representable in resources | Original sharing/unbound records not guaranteed |
 | Vertex/face counts | Retained unless edited | Can change at seams or repeated corners |

@@ -340,7 +340,8 @@ Indexed encoding requires a supplied CMP. RGB first rounds to bytes; squared RGB
 distance selects the nearest palette entry. Equal distances choose the lowest
 index. If a cel has alpha below 0.5, index zero is reserved for transparent pixels
 and excluded from every opaque-pixel search. Fractional alpha is not representable.
-There is no palette generation, color-profile transform or dithering.
+There is no palette generation or color-profile transform. Ordered dithering is
+optional and off by default; see [Indexed MAT dithering](../audits/materials.md).
 
 Standard Sith mipmaps use area averages with premultiplied alpha for alpha-bearing
 formats, then unpremultiply before encoding. Odd-sized edges are included; each
