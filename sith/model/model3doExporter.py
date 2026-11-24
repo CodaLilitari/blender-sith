@@ -46,8 +46,10 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
 
     ``textureEditions`` writes each MAT twice with the same name: Indexed 8-bit with the
     CMP into ``textureDirectory8bit`` and RGB565 16-bit into ``textureDirectory16bit``.
-    Both folders resolve like ``textureDirectory``, must differ, and are published with
-    the model in one step. ``textureDither`` dithers Indexed output (``encodeMat``).
+    Both folders resolve like ``textureDirectory`` and must be different folders: the same
+    path in another case, or two paths to one folder, is refused (``_same_folder``, and again
+    in ``publishExportFiles``). They are published with the model in one step.
+    ``textureDither`` dithers Indexed output (``encodeMat``).
     """
     with BenchmarkMeter(' done in {:.4f} sec.'):
         print("exporting 3DO: %r..." % (path), end="")
@@ -94,7 +96,7 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
         if textureEditions:
             indexedFolder = _texture_folder(textureDirectory8bit, destination, 'mat8')
             colorFolder = _texture_folder(textureDirectory16bit, destination, 'mat16')
-            if os.path.normcase(indexedFolder.resolve()) == os.path.normcase(colorFolder.resolve()):
+            if _same_folder(indexedFolder, colorFolder):
                 raise ValueError('The 8-bit and 16-bit MAT directories must differ: both editions use the same file names')
             textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither, **options)
                         + prepareMatExports(materials, colorFolder, 'RGB565', '', **options))
@@ -130,6 +132,23 @@ def _texture_folder(directory, destination: Path, default: str) -> Path:
     """Resolve a MAT folder: blend-relative // and absolute paths as given, others beside the 3DO."""
     folder = Path(bpy.path.abspath(os.fspath(directory) or default))
     return folder if folder.is_absolute() else destination.parent / folder
+
+
+def _same_folder(first: Path, second: Path) -> bool:
+    """Whether two folder paths can name one folder.
+
+    True for the same resolved path ignoring case, which is one folder on case-insensitive
+    volumes (the macOS and Windows defaults), and for two existing paths to one directory
+    (``os.path.samefile`` also sees bind mounts, which ``resolve`` does not). Folders that do not
+    exist yet are checked again by ``publishExportFiles`` once it has created them.
+    """
+    first, second = first.resolve(), second.resolve()
+    if os.path.normcase(str(first)).casefold() == os.path.normcase(str(second)).casefold():
+        return True
+    try:
+        return os.path.samefile(first, second)
+    except OSError:
+        return False
 
 
 def _check_retail_budget(model: Model3do, fail: bool, warnings) -> None:

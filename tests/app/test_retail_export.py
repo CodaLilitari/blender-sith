@@ -208,6 +208,8 @@ class RetailExportTests(SceneTestCase):
     def test_editions_reject_one_folder_grim_and_a_missing_palette_before_writing(self):
         self.path.write_bytes(b'previous model')
         cases = ((dict(textureDirectory8bit='shared', textureDirectory16bit='./shared'), 'must differ'),
+                 # One folder on case-insensitive volumes (the macOS and Windows defaults).
+                 (dict(textureDirectory8bit='mat8', textureDirectory16bit='MAT8'), 'must differ'),
                  (dict(), 'CMP palette'),
                  (dict(version=Model3doFileFormat.GrimFandango), 'Grim Fandango'))
         for options, message in cases:

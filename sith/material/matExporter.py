@@ -150,8 +150,24 @@ def _same_volume(first, second):
     return Path(first).stat().st_dev == Path(second).stat().st_dev
 
 
+def _destination(target):
+    """Identity of a destination file: its existing folder and its name without case.
+
+    Two spellings of one folder (another case on a case-insensitive volume, a bind mount, a
+    link) give the same folder identity, as ``os.path.samestat`` compares folders.
+    """
+    info = target.parent.stat()
+    folder = (info.st_dev, info.st_ino) if info.st_ino else os.path.normcase(str(target.parent.resolve())).casefold()
+    return folder, target.name.casefold()
+
+
 def publishExportFiles(files, staging, *, warnings=None):
-    """Publish prepared files and return written paths; roll back on failure."""
+    """Publish prepared files and return written paths; roll back on failure.
+
+    Missing folders are created first. Two files whose destinations are one file, or differ
+    only in case within one folder, are refused before anything is written: the second would
+    replace the first, or be kept as created during export.
+    """
     staging = Path(staging)
     completed = []
     created_directories = []
@@ -160,8 +176,9 @@ def publishExportFiles(files, staging, *, warnings=None):
     local_temporaries = []
     keep_recovery = False
     try:
-        for number, (target, prepared, overwrite) in enumerate(files):
-            target, prepared = Path(target), Path(prepared)
+        destinations = {}
+        for target, _, _ in files:
+            target = Path(target)
             if not target.parent.exists():
                 missing = []
                 directory = target.parent
@@ -176,6 +193,15 @@ def publishExportFiles(files, staging, *, warnings=None):
                             raise
                     else:
                         created_directories.append(directory)
+        for target, _, _ in files:
+            target = Path(target)
+            identity = _destination(target)
+            if identity in destinations:
+                raise ValueError(f"'{destinations[identity]}' and '{target}' are one file; "
+                                 'files with the same name need separate folders')
+            destinations[identity] = target
+        for number, (target, prepared, overwrite) in enumerate(files):
+            target, prepared = Path(target), Path(prepared)
             if target.is_symlink() or target.is_dir():
                 raise ValueError(f'Unsafe export destination: {target}')
             if not overwrite:

@@ -75,7 +75,10 @@ writes each MAT twice:
 
 Both folders follow the **MAT Directory** rules: relative paths resolve beside
 the 3DO; absolute and blend-relative `//` paths are used as given. They must be
-different folders. Every MAT of both editions is encoded before any file changes.
+different folders. Two spellings of one folder are refused before any file is
+written: the same path in another case (one folder on case-insensitive volumes,
+the macOS and Windows defaults), or two paths to one existing folder, such as a
+link or a bind mount. Every MAT of both editions is encoded before any file changes.
 The model and both editions are then published together, and a failure restores
 the previous files. Existing MATs are kept unless overwriting is enabled.
 `textureDither` dithers only the 8-bit edition. Grim Fandango exports reject

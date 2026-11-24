@@ -365,7 +365,9 @@ concurrent path changes. Existing files skipped without overwrite
 are not decoded or checked for compatible dimensions, cels, encoding or palette.
 Keeping a file therefore does not establish that it matches the exported model.
 
-Replacement and backup renames stay on the destination volume, even when a custom
+Two prepared files whose destinations are one file, through another spelling of
+the same folder or a name that differs only in case, are refused before the first
+is written. Replacement and backup renames stay on the destination volume, even when a custom
 MAT folder is on another drive. Prepared model/texture files are published
 sequentially with rollback backups, not as one atomic bundle. Ordinary caught
 failures attempt to restore earlier replacements; a failed restore preserves the
