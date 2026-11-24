@@ -110,7 +110,7 @@ export/
 | **ColorMap File** | Use this CMP palette for Indexed encoding; shown for Indexed only. Relative paths are beside the 3DO. |
 | **Generate Mipmaps** | When enabled, create smaller texture levels down to 1x1. On by default; hidden for Grim, which uses the base image only. |
 | **Overwrite Existing MAT Files** | When enabled, replace existing MATs in the output folders. Off by default. |
-| **8-bit and 16-bit Editions** | When enabled, write every MAT twice with the same name: Indexed with the **ColorMap File** into the 8-bit folder and RGB 565 into the 16-bit folder. Replaces **MAT Directory** and **Encoding**. Off by default; hidden for Grim. |
+| **8-bit and 16-bit Editions** | When enabled, write every MAT twice with the same name: Indexed with the **ColorMap File** into the 8-bit folder and RGB 565 into the 16-bit folder. RGB 565 has no transparency: texels that are see-through in the 8-bit edition are opaque in the 16-bit edition, so a cut-out texture such as hair cards renders solid there. **Translucent** faces still blend in both. Replaces **MAT Directory** and **Encoding**. Off by default; hidden for Grim. |
 | **8-bit MAT Directory** | Folder for the Indexed edition; default `mat8` beside the 3DO. Shown with editions. |
 | **16-bit MAT Directory** | Folder for the RGB 565 edition; default `mat16` beside the 3DO. It must differ from the 8-bit folder, also when case is ignored and through links. Shown with editions. |
 | **Dither Indexed Textures** | When enabled, use an ordered 4x4 pattern of two palette colors where the CMP has no close color, such as skin. A pattern never adds a [fullbright](#fullbright-colors) color. Off by default; shown for Indexed and editions. |
@@ -127,7 +127,7 @@ export/
   mat8/
     checker.mat    (Indexed, for the software renderer)
   mat16/
-    checker.mat    (RGB 565, for 3D acceleration)
+    checker.mat    (RGB 565 without transparency, for 3D acceleration)
 ```
 
 Dithering keeps colors the palette matches closely as one solid color. To dither

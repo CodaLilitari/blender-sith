@@ -197,8 +197,16 @@ class RetailExportTests(SceneTestCase):
         np.testing.assert_allclose(np.asarray(cels[0].pixel_data_array[0]).reshape((-1, 4)),
                                    expected_pixels(self.pixels, 'RGB565'), atol=1e-12, rtol=0)
         self.assertEqual([len(cel.pixel_data_array) for cel in cels], [2])
-        self.assertTrue(any('RGB565 discards alpha' in warning for warning in warnings))
         self.assertEqual(load3do(self.path)[0].materials, ['test.mat'])
+        # Texel 1 has alpha 0: transparent (index 0) in the 8-bit edition, opaque in the 16-bit one.
+        self.assertEqual((self.mat('mat8', 'test.mat')[2][0].transparent, cels[0].transparent), (True, False))
+        self.assertIn("The 16-bit edition discards alpha from 'cel0': RGB565 has no transparency, so its "
+                      "see-through texels are opaque in 'mat16'", warnings)
+        self.assertFalse([warning for warning in warnings if '8-bit edition' in warning])
+        # A single RGB565 export keeps the encoding's own message.
+        warnings = []
+        self.export(exportTextures=True, textureEncoding='RGB565', warnings=warnings)
+        self.assertIn("Encoding RGB565 discards alpha from 'cel0'", warnings)
 
     def test_edition_folders_are_configurable_and_follow_the_mat_folder_rules(self):
         self.export(exportTextures=True, textureEditions=True, texturePalette=str(self.palette_path),

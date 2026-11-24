@@ -120,6 +120,17 @@ writes each MAT twice:
 | 8-bit | Indexed with the CMP | `textureDirectory8bit` | `mat8` beside the 3DO |
 | 16-bit | RGB565 | `textureDirectory16bit` | `mat16` beside the 3DO |
 
+The two editions are not the same texture in two encodings when a cel has
+transparency. The 8-bit edition stores texels with alpha below 0.5 as index 0
+and marks the texture transparent. The 16-bit edition is RGB565: it has no
+alpha, and its texture headers leave transparency off (`alpha_en` 0;
+`rdMaterial_LoadEntry` keys out a color only when it is set). Texels that are
+see-through in the 8-bit edition are opaque in the 16-bit edition, so a cut-out
+texture such as hair cards renders solid in the 16-bit GOB. The export warns
+for each such image: "The 16-bit edition discards alpha from ...". Faces with
+the **Translucent** flag still blend in both editions: the hardware renderer
+draws them at alpha 90 whatever the MAT (`rdCache_SendFaceListToHardware`).
+
 Both folders follow the **MAT Directory** rules: relative paths resolve beside
 the 3DO; absolute and blend-relative `//` paths are used as given. They must be
 different folders. Two spellings of one folder are refused before any file is

@@ -46,6 +46,9 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
 
     ``textureEditions`` writes each MAT twice with the same name: Indexed 8-bit with the
     CMP into ``textureDirectory8bit`` and RGB565 16-bit into ``textureDirectory16bit``.
+    RGB565 has no alpha and its MATs set no transparency, so texels that are transparent in
+    the 8-bit edition (alpha below 0.5, index 0) are opaque in the 16-bit edition; a warning
+    names it.
     Both folders resolve like ``textureDirectory`` and must be different folders: the same
     path in another case, or two paths to one folder, is refused (``_same_folder``, and again
     in ``publishExportFiles``). They are published with the model in one step.
@@ -103,8 +106,8 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
             if _same_folder(indexedFolder, colorFolder):
                 raise ValueError('The 8-bit and 16-bit MAT directories must differ: both editions use the same file names')
             textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither,
-                                          avoidFullbright=textureAvoidFullbright, **options)
-                        + prepareMatExports(materials, colorFolder, 'RGB565', '', **options))
+                                          avoidFullbright=textureAvoidFullbright, edition='8-bit edition', **options)
+                        + prepareMatExports(materials, colorFolder, 'RGB565', '', edition='16-bit edition', **options))
         else:
             textures = prepareMatExports(materials, _texture_folder(textureDirectory, destination, 'mat'),
                                          textureEncoding, palette, grim=version == Model3doFileFormat.GrimFandango,

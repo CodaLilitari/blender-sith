@@ -80,14 +80,16 @@ def _dither_mask(material, index, width, height):
 
 
 def prepareMatExports(materials, directory, encoding, palettePath='', *, overwrite=False,
-                      generateMipmaps=True, grim=False, warnings=None, dither=False, avoidFullbright=False):
+                      generateMipmaps=True, grim=False, warnings=None, dither=False, avoidFullbright=False,
+                      edition=None):
     """Encode material cels or individual images before touching output files.
 
     ``dither`` applies ordered dithering to Indexed output (see ``encodeMat``). A material
     can limit it per cel with an image in its ``sith_dither_mask_<cel>`` property: texels
     whose red value is at least 0.5 are dithered. The mask must match the cel's size.
     ``avoidFullbright`` keeps the palette entries the CMP never darkens out of Indexed
-    output (``encodeMat``); it needs a JKDF2/MOTS CMP with its light table.
+    output (``encodeMat``); it needs a JKDF2/MOTS CMP with its light table. ``edition``
+    names the MAT edition these files are, such as '16-bit edition', in warnings.
     """
     directory = Path(directory)
     if directory.is_symlink() or (getattr(directory, 'is_junction', lambda: False)()):
@@ -142,7 +144,11 @@ def prepareMatExports(materials, directory, encoding, palettePath='', *, overwri
                 if np.any(pixels < 0) or np.any(pixels > 1):
                     warnings.append(f"Clamped HDR values in '{image.name}' to the MAT range [0,1]")
                 if encoding in ('RGB24', 'RGB565') and np.any(pixels[3::4] < 1):
-                    warnings.append(f"Encoding {encoding} discards alpha from '{image.name}'")
+                    if edition:
+                        warnings.append(f"The {edition} discards alpha from '{image.name}': {encoding} has no "
+                                        f"transparency, so its see-through texels are opaque in '{directory.name}'")
+                    else:
+                        warnings.append(f"Encoding {encoding} discards alpha from '{image.name}'")
             mask = _dither_mask(material, index, width, height) if dither else None
             cels.append(MatCel(width, height, pixels, mask))
         result.append((target, encodeMat(cels, encoding, palette, generateMipmaps=generateMipmaps,
