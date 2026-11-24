@@ -97,6 +97,13 @@ were cut. A wrong reference gives plausible counts and no warning.
   docstring names the engine functions it follows. No audit runs the game.
 - Poses are sampled one at a time. Puppet timing, fades, looping, physics and the player's aim are
   not run.
+- A KEY played alone is sampled at `0, step, 2*step ...` up to `FRAMES - 1` at most
+  (`keyFrameTimes`), as Red's sweep was. The engine also plays the last interval, up to `FRAMES`:
+  a looping KEY shows every time below `FRAMES`, and a KEY that holds or fades at its end stops at
+  `FRAMES`. The joint-gap audit, the seat offsets, the cut lint's `testPoses` and the floor and
+  camera audits take `toEnd=True` to sample it too; the MCP tools and the panel use the default.
+  The KEY lint's pop scan already samples up to `FRAMES`.
+- `step` must be a positive finite number of frames.
 - Thresholds are JK units chosen for Kyle-sized characters, from a few released characters. Scale
   them for other sizes.
 - The audits are geometric checks of native files. A person, or a test in the game, still has to

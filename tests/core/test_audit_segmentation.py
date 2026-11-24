@@ -377,6 +377,8 @@ class AuditTests(unittest.TestCase):
         still = key({2: [entry(0, pos=SHOULDER)]}, name='still.key')
         poses = testPoses([still, swing], step=1.0)
         self.assertEqual([label for label, _ in poses], ['still.key@0', 'still.key@1', 'swing.key@0', 'swing.key@1'])
+        self.assertEqual([label for label, _ in testPoses([still], step=1.0, toEnd=True)],
+                         ['still.key@0', 'still.key@1', 'still.key@2'])
         report = auditSegmentation(model, poses=poses)
         self.assertEqual(report['poses'], 4)
         for finding in report['findings']:

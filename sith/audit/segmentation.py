@@ -431,16 +431,18 @@ def _referenceFrames(model, reference):
 
 
 # ----------------------------------------------------------------------------------------- test poses
-def testPoses(keys: Iterable, *, step: float = 2.0, priority: int = 1, base: Sequence[PoseLayer] = ()):
+def testPoses(keys: Iterable, *, step: float = 2.0, priority: int = 1, base: Sequence[PoseLayer] = (),
+              toEnd: bool = False):
     """Test poses for ``auditSegmentation``: each KEY on its own at every ``step`` frames.
 
     Returns ``(label, layers)`` pairs labelled ``name@frame``. ``base`` layers (for example a standing
-    KEY at a lower priority) play under each KEY, as the engine fills nodes a KEY leaves alone.
+    KEY at a lower priority) play under each KEY, as the engine fills nodes a KEY leaves alone. The
+    frames stop at ``FRAMES - 1``; with ``toEnd`` they run to ``FRAMES`` itself (``keyFrameTimes``).
     """
     poses = []
     for key in keys:
         name = getattr(key, 'name', 'key')
-        for frame in keyFrameTimes(key, step):
+        for frame in keyFrameTimes(key, step, toEnd=toEnd):
             poses.append((f'{name}@{frame:g}', list(base) + [PoseLayer(key, frame, lowPri=priority)]))
     return poses
 

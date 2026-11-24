@@ -254,6 +254,10 @@ These checks ran on the private release files. None of that data is in the repos
 - Poses are sampled, not played. Puppet timing, fades between KEYs, physics, slopes, steps and the
   player's aim are not run. The floor is one flat plane. Supply aim as `preRotations` on a
   `PoseSample` when it matters.
+- By default a KEY played alone is sampled up to `FRAMES - 1` at most, so the last interval, which
+  the engine plays up to `FRAMES`, is not sampled. Pass `toEnd=True` to `keySequence`,
+  `auditFloorContact`, `lowestPoints` or `auditCameraReading` to sample it too. The MCP tool and
+  the Sith Audits panel use the default.
 - The floor is only as right as the `floor` you choose. The engine's own floor depends on the
   template's `height` and `movesize`, which the 3DO does not hold.
 - Slip measures sliding on the floor. It does not measure a joint moving along its parent, as the boot

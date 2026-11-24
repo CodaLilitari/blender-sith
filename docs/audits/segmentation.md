@@ -123,8 +123,9 @@ keys = [loadKey(path) for path in sorted(glob.glob('key/*.key'))]
 report = auditSegmentation(model, poses=testPoses(keys, step=2.0))   # every second frame
 ```
 
-`testPoses(keys, step, priority, base)` plays each KEY on its own and labels each pose `name@frame`;
-`base` layers (a standing KEY at a lower priority) play under each one. Any list of
+`testPoses(keys, step, priority, base, toEnd)` plays each KEY on its own and labels each pose
+`name@frame`; `base` layers (a standing KEY at a lower priority) play under each one. The frames
+stop at or before `FRAMES - 1`; with `toEnd=True` they run on to `FRAMES`. Any list of
 `(label, [PoseLayer, ...])` pairs works.
 
 Time grows with the face count: Biddy Blas (4,090 faces) takes 0.1 seconds, Mandalorian Red (5,045)
@@ -232,6 +233,9 @@ The largest `review` lever among them is Biddy's torso under his head, at 0.030.
   needs `joints`, or it is treated as part of its Kyle ancestor.
 - The reference pose must be the pose the pieces were cut in; the wrong one makes normal overlaps look
   like ghosts and can hide a real one.
+- By default `testPoses` stops at or before `FRAMES - 1`, so the last interval of each KEY, which
+  the engine plays up to `FRAMES`, is not sampled. Pass `toEnd=True` to sample it. The MCP tool
+  uses the default.
 - One geoset at a time. Characters with identical detail levels need the same edit on every geoset.
 - `removeFaces` edits one mesh and leaves unused vertices in place. A loop that does not close is left
   open and listed. Caps across an opening far from flat may cut inside the surface: check them in the

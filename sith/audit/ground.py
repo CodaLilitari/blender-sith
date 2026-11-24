@@ -152,8 +152,11 @@ class PoseSequence:
 
 
 def keySequence(key, step: float = 1.0, *, direction: Optional[Sequence[float]] = None,
-                floor: Optional[float] = None, name: Optional[str] = None) -> PoseSequence:
-    """A KEY played alone, sampled at ``keyFrameTimes(key, step)``.
+                floor: Optional[float] = None, name: Optional[str] = None, toEnd: bool = False) -> PoseSequence:
+    """A KEY played alone, sampled at ``keyFrameTimes(key, step, toEnd=toEnd)``.
+
+    The samples stop at ``FRAMES - 1``. With ``toEnd`` they also cover the last interval, which
+    the engine plays, up to ``FRAMES`` itself.
 
     ``direction`` marks a movement-controlled KEY and the way the thing moves while it plays, as
     (x, y) in the model's frame: (0, 1) for a forward walk or run, (0, -1) for walking back,
@@ -172,7 +175,7 @@ def keySequence(key, step: float = 1.0, *, direction: Optional[Sequence[float]] 
         if length == 0.0:
             raise ValueError('direction must not be zero')
         travel = (vector[0] / length / MOVE_FRAMES_PER_UNIT, vector[1] / length / MOVE_FRAMES_PER_UNIT)
-    samples = [PoseSample(t, (PoseLayer(key, t),)) for t in keyFrameTimes(key, step)]
+    samples = [PoseSample(t, (PoseLayer(key, t),)) for t in keyFrameTimes(key, step, toEnd=toEnd)]
     return PoseSequence(getattr(key, 'name', '') if name is None else name, samples, floor, travel)
 
 
@@ -214,18 +217,20 @@ def referenceFloor(model, layers: Sequence[PoseLayer] = (), *, nodes: Optional[I
 
 
 def lowestPoints(model, sequence, *, nodes: Optional[Iterable[NodeRef]] = None,
-                 carried: Sequence[CarriedMesh] = (), step: float = 1.0, geoset: int = 0) -> List[dict]:
+                 carried: Sequence[CarriedMesh] = (), step: float = 1.0, geoset: int = 0,
+                 toEnd: bool = False) -> List[dict]:
     """Per sample, the lowest posed vertex of ``nodes``' meshes and of the carried meshes shown.
 
-    ``sequence`` is a ``PoseSequence`` or a KEY played alone at ``step``. ``nodes`` defaults to every
-    node with a mesh; an empty list measures carried meshes only. Each entry has ``time``, ``z``
-    (None when nothing is drawn), ``node`` and ``node_name`` (the drawing or carrying node),
-    ``mesh`` (None for a carried mesh), ``carried`` (its name, else None) and ``vertex``. Use it to
-    compare a model with a reference model sample by sample.
+    ``sequence`` is a ``PoseSequence`` or a KEY played alone at ``step`` (``keySequence``, with
+    ``toEnd``). ``nodes`` defaults to every node with a mesh; an empty list measures carried meshes
+    only. Each entry has ``time``, ``z`` (None when nothing is drawn), ``node`` and ``node_name``
+    (the drawing or carrying node), ``mesh`` (None for a carried mesh), ``carried`` (its name, else
+    None) and ``vertex``. Use it to compare a model with a reference model sample by sample.
     """
+    _checkStep(step)
     setup = _Setup(model, geoset, nodes, (), carried)
     out = []
-    for sample in _asSequence(sequence, step).samples:
+    for sample in _asSequence(sequence, step, toEnd).samples:
         _, points, carriedPoints = setup.posed(sample)
         low = setup.lowest(points, carriedPoints, setup.nodes)
         entry = {'time': float(sample.time), 'z': None, 'node': None, 'node_name': None, 'mesh': None,
@@ -241,10 +246,11 @@ def auditFloorContact(model, sequences: Iterable, *, floor=None, nodes: Optional
                       contacts: Optional[Iterable[NodeRef]] = None, carried: Sequence[CarriedMesh] = (),
                       step: float = 1.0, tolerance: float = 0.002, floatTolerance: float = 0.002,
                       contactBand: float = 0.0015, stanceBand: float = 0.0015, slipTolerance: float = 0.003,
-                      geoset: int = 0) -> dict:
+                      geoset: int = 0, toEnd: bool = False) -> dict:
     """Floor contact and contact slip of a model over KEYs or layered pose sequences.
 
-    ``sequences`` holds KEYs (each played alone at ``step``) and ``PoseSequence`` objects.
+    ``sequences`` holds KEYs and ``PoseSequence`` objects. Each KEY is played alone at ``step``, up
+    to ``FRAMES - 1`` or with ``toEnd`` up to ``FRAMES`` itself (``keySequence``).
     ``floor`` is None for the lowest point of the whole model at rest, a number for a height in the
     posed frame, or a list of ``PoseLayer`` for the lowest point of a reference pose. A sequence's
     own ``floor`` replaces it.
@@ -273,17 +279,18 @@ def auditFloorContact(model, sequences: Iterable, *, floor=None, nodes: Optional
     count and the worst sample; ``issue_counts`` counts them and ``sequences`` holds each one's
     minimum and maximum. Lengths are JK units.
     """
+    _checkStep(step)
     setup = _Setup(model, geoset, nodes, contacts, carried)
     explicitContacts = contacts is not None
     floorValue, floorSource = _resolveFloor(model, floor, geoset)
     report = {'floor': floorValue, 'floor_source': floorSource, 'nodes': list(setup.nodes),
               'contacts': list(setup.contacts), 'slip_nodes': list(setup.contacts) if explicitContacts else [],
-              'carried': [c.name for c in setup.carried], 'step': step, 'tolerance': tolerance,
+              'carried': [c.name for c in setup.carried], 'step': step, 'to_end': bool(toEnd), 'tolerance': tolerance,
               'float_tolerance': floatTolerance, 'contact_band': contactBand, 'stance_band': stanceBand,
               'slip_tolerance': slipTolerance, 'samples': 0, 'sequences': [], 'issue_counts': {}, 'findings': []}
     finding = _findings(report)
 
-    for sequence in (_asSequence(item, step) for item in sequences):
+    for sequence in (_asSequence(item, step, toEnd) for item in sequences):
         level = floorValue if sequence.floor is None else sequence.floor
         summary = {'name': sequence.name, 'samples': len(sequence.samples), 'floor': level, 'travel': sequence.travel,
                    'lowest_min': None, 'lowest_min_time': None, 'lowest_max': None, 'lowest_max_time': None,
@@ -390,18 +397,22 @@ def viewExtent(points, direction) -> Tuple[float, float]:
 
 def auditCameraReading(model, sequences: Iterable, *, carried: Sequence[CarriedMesh] = (),
                        nodes: Iterable[NodeRef] = (), direction=None, aimPitch: float = 0.0, step: float = 1.0,
-                       shortRatio: float = 0.5, minLength: float = 0.05, geoset: int = 0) -> dict:
+                       shortRatio: float = 0.5, minLength: float = 0.05, geoset: int = 0,
+                       toEnd: bool = False) -> dict:
     """How long the measured meshes read from the third-person camera, sample by sample.
 
-    At each sample the carried meshes shown then and ``nodes``' meshes (default: none) are measured
-    together with ``viewExtent`` along ``direction`` (default: ``thirdPersonViewDirection(aimPitch)``).
-    The view direction is fixed in the model's frame because the camera turns with the thing. A
+    ``sequences`` holds KEYs, each played alone at ``step`` (``keySequence``, with ``toEnd``), and
+    ``PoseSequence`` objects. At each sample the carried meshes shown then and ``nodes``' meshes
+    (default: none) are measured together with ``viewExtent`` along ``direction`` (default:
+    ``thirdPersonViewDirection(aimPitch)``). The view direction is fixed in the model's frame
+    because the camera turns with the thing. A
     sample reads short when its full extent is at least ``minLength`` and the extent across the
     view is below ``shortRatio`` of it: a long mesh pointing along the view looks like a stub.
     Every sample is reported in ``rows``; findings are one per sequence with the count and the
     sample with the lowest ratio. Perspective, the camera's distance and anything standing between
     the camera and the mesh are not modelled.
     """
+    _checkStep(step)
     setup = _Setup(model, geoset, nodes, (), carried)
     view = thirdPersonViewDirection(aimPitch) if direction is None else np.asarray(direction, dtype=float).reshape(3)
     if not float(np.linalg.norm(view)):
@@ -412,7 +423,7 @@ def auditCameraReading(model, sequences: Iterable, *, carried: Sequence[CarriedM
               'nodes': list(setup.nodes), 'carried': [c.name for c in setup.carried], 'short_ratio': shortRatio,
               'min_length': minLength, 'samples': 0, 'sequences': [], 'issue_counts': {}, 'findings': []}
     finding = _findings(report)
-    for sequence in (_asSequence(item, step) for item in sequences):
+    for sequence in (_asSequence(item, step, toEnd) for item in sequences):
         rows, worst, short = [], None, 0
         for sample in sequence.samples:
             _, points, carriedPoints = setup.posed(sample)
@@ -452,12 +463,17 @@ def _findings(report):
     return finding
 
 
-def _asSequence(item, step: float) -> PoseSequence:
+def _checkStep(step) -> None:
+    if not (math.isfinite(step) and step > 0):
+        raise ValueError('step must be a positive finite number')
+
+
+def _asSequence(item, step: float, toEnd: bool = False) -> PoseSequence:
     if isinstance(item, PoseSequence):
         return item
     if not hasattr(item, 'numFrames') or not hasattr(item, 'nodes'):
         raise TypeError('sequences hold KEYs and PoseSequence objects')
-    return keySequence(item, step)
+    return keySequence(item, step, toEnd=toEnd)
 
 
 def _resolveFloor(model, floor, geoset: int) -> Tuple[float, str]:
