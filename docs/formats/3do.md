@@ -35,7 +35,8 @@ indices. Likewise, a face's UV indices are independent of its vertex indices:
 one geometric vertex can have different UVs on adjacent faces.
 
 Geosets provide alternative geometry, commonly LODs. The resource model can hold
-them all; Blender imports/exports **geoset 0 only**. A valid hierarchy can refer
+them all; Blender imports **geoset 0 only** and exports geoset 0, or up to four
+identical copies of it with **Detail Levels** ([retail budget](../audits/budget.md)). A valid hierarchy can refer
 to a parent appearing later in the node array; stream order alone is not ancestry.
 
 ### Hierarchy Node Types

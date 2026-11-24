@@ -13,6 +13,9 @@ from .mat import kMatCelImagePrefix, kMatMissingPixels
 from .matWriter import MatCel, encodeMat
 
 
+kMatDitherMaskPrefix = 'sith_dither_mask_'  # Material property + cel index -> mask Image.
+
+
 class ExportRollbackError(RuntimeError):
     """Keep the staging directory if an OS error prevents restoring originals."""
 
@@ -55,12 +58,40 @@ def _images(material):
     return [bound[index] for index in range(len(bound))]
 
 
+def _dither_mask(material, index, width, height):
+    """Red channel of the material's mask image for one cel, or None when it has none."""
+    import bpy
+
+    name = kMatDitherMaskPrefix + str(index)
+    if not isinstance(material, bpy.types.Material) or name not in material.keys():
+        return None
+    image = material[name]
+    if not isinstance(image, bpy.types.Image):
+        raise ValueError(f"Material '{material.name}' property '{name}' must reference an image")
+    if tuple(image.size) != (width, height):
+        raise ValueError(f"Dither mask '{image.name}' is {image.size[0]}x{image.size[1]}, "
+                         f"but cel {index} of '{material.name}' is {width}x{height}")
+    pixels = np.empty(width * height * 4, dtype=np.float32)
+    try:
+        image.pixels.foreach_get(pixels)
+    except RuntimeError as error:
+        raise ValueError(f"Cannot read pixels from dither mask '{image.name}'") from error
+    return pixels[0::4]
+
+
 def prepareMatExports(materials, directory, encoding, palettePath='', *, overwrite=False,
-                      generateMipmaps=True, grim=False, warnings=None):
-    """Encode material cels or individual images before touching output files."""
+                      generateMipmaps=True, grim=False, warnings=None, dither=False):
+    """Encode material cels or individual images before touching output files.
+
+    ``dither`` applies ordered dithering to Indexed output (see ``encodeMat``). A material
+    can limit it per cel with an image in its ``sith_dither_mask_<cel>`` property: texels
+    whose red value is at least 0.5 are dithered. The mask must match the cel's size.
+    """
     directory = Path(directory)
     if directory.is_symlink() or (getattr(directory, 'is_junction', lambda: False)()):
         raise ValueError('MAT output directory cannot be a symbolic link or junction')
+    if dither and encoding != 'INDEXED':
+        raise ValueError('Dithering applies only to Indexed MAT encoding')
     named = {}
     for name, material in materials:
         _filename(name)
@@ -74,7 +105,7 @@ def prepareMatExports(materials, directory, encoding, palettePath='', *, overwri
             raise ValueError(f'Unsafe MAT output path: {target}')
         if target.exists() and not overwrite:
             if warnings is not None:
-                warnings.append(f"Kept existing MAT '{name}' (Overwrite Existing MAT Files is disabled)")
+                warnings.append(f"Kept existing MAT '{name}' in '{directory.name}' (Overwrite Existing MAT Files is disabled)")
             continue
         pending.append((target, material))
     if not pending:
@@ -90,7 +121,7 @@ def prepareMatExports(materials, directory, encoding, palettePath='', *, overwri
     result = []
     for target, material in pending:
         cels = []
-        for image in _images(material):
+        for index, image in enumerate(_images(material)):
             if (image.source not in ('FILE', 'GENERATED') or image.get(kMatMissingPixels)
                     or min(image.size) <= 0):
                 raise ValueError(f"Image '{image.name}' has no exportable still-image pixels; load/bake it or reload its MAT with a CMP")
@@ -108,9 +139,10 @@ def prepareMatExports(materials, directory, encoding, palettePath='', *, overwri
                     warnings.append(f"Clamped HDR values in '{image.name}' to the MAT range [0,1]")
                 if encoding in ('RGB24', 'RGB565') and np.any(pixels[3::4] < 1):
                     warnings.append(f"Encoding {encoding} discards alpha from '{image.name}'")
-            cels.append(MatCel(width, height, pixels))
-        result.append((target, encodeMat(cels, encoding, palette,
-                                        generateMipmaps=generateMipmaps, grim=grim)))
+            mask = _dither_mask(material, index, width, height) if dither else None
+            cels.append(MatCel(width, height, pixels, mask))
+        result.append((target, encodeMat(cels, encoding, palette, generateMipmaps=generateMipmaps,
+                                        grim=grim, dither=dither)))
     return result
 
 
@@ -228,8 +260,12 @@ def publishExportFiles(files, staging, *, warnings=None):
 
 
 def exportMat(source, path, encoding='RGBA32', palettePath='', *, overwrite=False,
-              generateMipmaps=True, grim=False, warnings=None):
-    """Export one image or a material's bound cels; return False if kept existing."""
+              generateMipmaps=True, grim=False, warnings=None, dither=False):
+    """Export one image or a material's bound cels; return False if kept existing.
+
+    ``dither`` is passed to ``prepareMatExports``: Indexed only, limited per cel by a
+    material's ``sith_dither_mask_<cel>`` image when present.
+    """
     import bpy
 
     if not isinstance(source, (bpy.types.Material, bpy.types.Image)):
@@ -250,7 +286,7 @@ def exportMat(source, path, encoding='RGBA32', palettePath='', *, overwrite=Fals
 
     textures = prepareMatExports([(destination.name, source)], destination.parent, encoding,
                                  palette, overwrite=overwrite, generateMipmaps=generateMipmaps,
-                                 grim=grim, warnings=warnings)
+                                 grim=grim, warnings=warnings, dither=dither)
     if not textures:
         return False
     staging = Path(tempfile.mkdtemp(prefix='sith-mat-export-'))

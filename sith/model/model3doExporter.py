@@ -24,6 +24,7 @@ from ..types import BenchmarkMeter
 from ..utils import *
 from typing import Dict, List, Optional
 
+from ..audit.budget import auditBudget, budgetWarnings
 from .model3do import *
 from .model3doLoader import Model3doFileFormat, Model3doFileVersion
 from . import model3doWriter
@@ -35,10 +36,26 @@ kDefaultVertexColor = Vector4f(0.0, 0.0, 0.0, 1.0)
 kHNDefaultFlags     = 0
 kHNDefaultType      = 0
 
-def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat'):
-    """Build the resource from a Blender model, then write the requested version."""
+def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uvAbsolute: bool, exportVertexColors: bool, sync_mesh_list: bool, *, bakePivots=False, warnings=None, exportTextures=False, textureEncoding='RGBA32', texturePalette='', overwriteTextures=False, generateMipmaps=True, textureDirectory='mat', detailLevels=1, failOverBudget=False, textureDither=False, textureEditions=False, textureDirectory8bit='mat8', textureDirectory16bit='mat16'):
+    """Build the resource from a Blender model, then write the requested version.
+
+    ``detailLevels`` writes that many identical geosets, 1 to 4 (``setDetailLevels``).
+    A 2.1 (JKDF2/MOTS) export checks the emitted model against the retail limits in
+    ``sith.audit.budget``: problems become warnings, or stop the export before any file
+    is written when ``failOverBudget`` is set. Other formats are not checked.
+
+    ``textureEditions`` writes each MAT twice with the same name: Indexed 8-bit with the
+    CMP into ``textureDirectory8bit`` and RGB565 16-bit into ``textureDirectory16bit``.
+    Both folders resolve like ``textureDirectory``, must differ, and are published with
+    the model in one step. ``textureDither`` dithers Indexed output (``encodeMat``).
+    """
     with BenchmarkMeter(' done in {:.4f} sec.'):
         print("exporting 3DO: %r..." % (path), end="")
+
+        if exportTextures and textureEditions and version == Model3doFileFormat.GrimFandango:
+            raise ValueError('8-bit and 16-bit MAT editions are for JKDF2/MOTS; Grim Fandango uses Indexed MATs only')
+        if exportTextures and textureDither and not textureEditions and textureEncoding != 'INDEXED':
+            raise ValueError('Dithering applies to Indexed textures; select Indexed encoding or both editions')
 
         bpy.path.ensure_ext(path, '.3do')
         model_name = os.path.basename(path)
@@ -51,6 +68,10 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
             for geoset in model3do.geosets:
                 for mesh in geoset.meshes:
                     mesh.shadow = None
+        # Copy geoset 0 after mesh sync and radius repair, and check the model as written.
+        setDetailLevels(model3do, detailLevels)
+        if version == Model3doFileVersion.Version2_1:
+            _check_retail_budget(model3do, failOverBudget, warnings)
         header   = getExportFileHeader(f"3DO model '{os.path.basename(path)}'")
         if not exportTextures:
             model3doWriter.save3do(model3do, path, version, header, warnings=warnings)
@@ -61,9 +82,6 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
         # Prepare geometry and every image before changing final files. A bad
         # later cel or missing palette must not replace an existing model.
         destination = Path(path).absolute()
-        textureFolder = Path(bpy.path.abspath(os.fspath(textureDirectory) or 'mat'))
-        if not textureFolder.is_absolute():
-            textureFolder = destination.parent / textureFolder
         palette = os.fspath(texturePalette)
         if palette:
             palette = bpy.path.abspath(palette)
@@ -72,9 +90,18 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
         materials = [(_get_mat_name(slot.material), slot.material)
                      for node in model3do.meshHierarchy if node.meshIdx >= 0
                      for slot in node.obj.material_slots if slot.material is not None]
-        textures = prepareMatExports(materials, textureFolder, textureEncoding, palette,
-                                     overwrite=overwriteTextures, generateMipmaps=generateMipmaps,
-                                     grim=version == Model3doFileFormat.GrimFandango, warnings=warnings)
+        options = dict(overwrite=overwriteTextures, generateMipmaps=generateMipmaps, warnings=warnings)
+        if textureEditions:
+            indexedFolder = _texture_folder(textureDirectory8bit, destination, 'mat8')
+            colorFolder = _texture_folder(textureDirectory16bit, destination, 'mat16')
+            if os.path.normcase(indexedFolder.resolve()) == os.path.normcase(colorFolder.resolve()):
+                raise ValueError('The 8-bit and 16-bit MAT directories must differ: both editions use the same file names')
+            textures = (prepareMatExports(materials, indexedFolder, 'INDEXED', palette, dither=textureDither, **options)
+                        + prepareMatExports(materials, colorFolder, 'RGB565', '', **options))
+        else:
+            textures = prepareMatExports(materials, _texture_folder(textureDirectory, destination, 'mat'),
+                                         textureEncoding, palette, grim=version == Model3doFileFormat.GrimFandango,
+                                         dither=textureDither, **options)
         staging = Path(tempfile.mkdtemp(prefix='.sith-export-', dir=destination.parent))
         keepRecovery = False
         try:
@@ -97,6 +124,27 @@ def export3do(obj: bpy.types.Object, path: str, version: Model3doFileVersion, uv
                 except OSError as error:
                     if warnings is not None:
                         warnings.append(f'Could not remove export temporary directory {staging}: {error}')
+
+
+def _texture_folder(directory, destination: Path, default: str) -> Path:
+    """Resolve a MAT folder: blend-relative // and absolute paths as given, others beside the 3DO."""
+    folder = Path(bpy.path.abspath(os.fspath(directory) or default))
+    return folder if folder.is_absolute() else destination.parent / folder
+
+
+def _check_retail_budget(model: Model3do, fail: bool, warnings) -> None:
+    """Report the emitted model against the retail JKDF2/MOTS limits (they are the same)."""
+    report = auditBudget(model, 'JKDF2')
+    if report['status'] == 'within_limits':
+        return
+    lines = budgetWarnings(report)
+    if fail:
+        raise ValueError('The model is over the retail JKDF2/MOTS limits: ' + '; '.join(lines))
+    for line in lines:
+        message = 'Over the retail JKDF2/MOTS limits: ' + line
+        print('\nWarning: ' + message)
+        if warnings is not None:
+            warnings.append(message)
 
 
 def _set_hnode_pose(node: Mesh3doNode, scale: mathutils.Vector, *, bakePivots=False):
