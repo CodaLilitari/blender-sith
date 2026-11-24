@@ -11,6 +11,7 @@ A quick guide to importing, editing and exporting game models, animations and te
 | 🖼️ **MAT Textures** | [Import](#-importing-mat-textures) · [Export](#exporting-mat-textures) · [Export options](#mat-export-options) · [Encodings](#encodings) |
 | 📤 **MAT Export Locations** | [Outliner](#outliner) · [Image Editor](#image-editor) · [Material Properties](#material-properties) |
 | 🎛️ **Editing** | [3DO properties](#-editing-3do-properties) · [Object properties](#-object-3do-properties) · [Face properties](#-mesh-face-properties) · [Extra Light preview](#extra-light-preview) |
+| 🔍 **Audits** | [Sith Audits panel](#-auditing-models) · [Check Retail Limits](#check-retail-limits) · [Colour Pieces](#colour-pieces-and-restore-colours) · [Audit Files](#audit-files) |
 | 🔧 **Help** | [Troubleshooting](#-troubleshooting) · [Compatibility notes](docs/blender-compatibility.md) · [Technical reference](docs/README.md) |
 
 ## 📥 Importing 3DO Models
@@ -360,6 +361,88 @@ origin, add a pivot gizmo, or preview attached objects in that native frame.
 Full viewport pivot/attachment evaluation is follow-up work. Review origin/Apply
 Transform edits separately and test attachments in the target game; these
 file/Blender guarantees are not a game-runtime test.
+
+## 🔍 Auditing Models
+
+Open the 3D View sidebar (**N**) and its **Sith** tab. The **Sith Audits** panel
+runs the [native audits](docs/audits/) on the active model or on files. Each
+report goes to a Text datablock; open it in the **Text Editor**. The commands
+do not change model data and do not write files. A finding is a lead to look
+at in Blender or in the game, not a verdict.
+
+### Check Retail Limits
+
+1. Select the model or one of its joints.
+2. Click **Check Retail Limits**, check the options and click **OK**.
+
+The check builds the model in memory the way the 3DO exporter does, with the
+same options, and counts it against the retail JKDF2/MOTS limits: 512 vertices,
+768 texture vertices and 512 faces per mesh, 24 corners per face, 4 geosets and
+64 joints. Over-limit meshes are listed as warnings. The report is the Text
+`<model> - Retail Limits`; see the [budget notes](docs/audits/budget.md).
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| **Target** | JKDF2 | JKDF2 or MOTS. Both games load models with the same limits. |
+| **v2.1 Absolute UV** | On | As in the export dialog: count the pixel-space UVs a 2.1 export writes. |
+| **Export Vertex Colors** | Off | As in the export dialog: corners with different colors stay separate vertices. |
+| **Sync Mesh List with Node Hierarchy** | On | As in the export dialog: number meshes in node order, so mesh numbers match the export. |
+| **Bake Pivots** | Off | As in the export dialog: count the model with zero pivots. |
+| **Detail Levels** | 1 | As in the export dialog: count this many geosets, each a copy of the model. |
+
+### Colour Pieces and Restore Colours
+
+**Colour Pieces** paints each piece of the active model one solid color, so you
+can see which piece a lump of surface belongs to. It sets the objects' viewport
+colors and switches the 3D View's Solid shading color to **Object**. The colors
+show in Solid shading. A node keeps its color across models and runs.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| **Colour By** | Node | **Node** gives each hierarchy node a color. **Rigid Part** gives one color to the nodes that move with each of Kyle's joints, or to each node when the model has no Kyle names. Change it in **Adjust Last Operation**. |
+
+**Restore Colours** puts back the object colors and the 3D View color mode that
+**Colour Pieces** changed. The previous values are kept in the blend file (custom
+properties `_sith_saved_color` on objects and `_sith_saved_color_type` on the
+scene), so restoring also works after saving and reopening. A color mode you
+changed yourself in between is left as you set it.
+
+### Audit Files
+
+1. Click **Audit Files** and select a 3DO file.
+2. Set the KEY folder, the checks and the reference pose in the file browser's side panel.
+3. Click **Audit Files**.
+
+Blender waits until the audit ends. A full joint-gap sweep can take minutes:
+about 80 seconds for 91 KEYs on a 14,600-face model, after the model is read.
+Choose **KEY Files** or a larger **Step** for a quicker run. Each check writes the
+Text `<3DO file> - <check>`: a summary, then the complete report.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| **KEY Folder** | Blank | The KEYs to audit. Blank uses the `key` folder beside the 3DO. |
+| **KEY Files** | Blank | Comma-separated file names in the KEY folder, for a shorter run. Blank audits every `.key` file. |
+| **Step** | 2 | Sample each KEY every **Step** frames from frame 0. |
+| **Joint Gaps** | On | Find lines of sight through each joint in every sampled pose ([joint gaps](docs/audits/articulation.md)). The slowest check. |
+| **Seat Offsets** | On | Measure how far each KEY moves each node from its seat in the reference pose. |
+| **Floor Contact** | On | Find samples where the model goes under the engine floor or its lowest point floats above it ([floor contact](docs/audits/ground.md)). |
+| **KEY Lint** | On | Check each KEY's header, track table and the motion between its entries ([KEY lint](docs/audits/keylint.md)). |
+| **Reference Pose** | Rest Pose | The pose the pieces were cut in: **Rest Pose** or **Reference KEY**. Joint gaps and seat offsets measure from it. |
+| **Reference KEY File** | `kystand1.key` | Shown for **Reference KEY**: a file name in the KEY folder, or a path. |
+| **Reference Frame** | 0 | Shown for **Reference KEY**: the frame of that KEY. |
+| **Zero Rotations** | On | Shown for **Reference KEY**: the nodes it drives take zero rotation. |
+| **Move Size** | 0.065 | Shown for **Floor Contact**: the player template's movesize, which sets the engine floor. Stock `walkplayer` uses 0.065. |
+| **Crouch KEYs** | `kycrchgn.key, kycrchbk.key` | Shown for **Floor Contact**: KEYs that play on the crouch floor. Names not in the run are ignored. |
+| **Lint Target** | JKDF2 | Shown for **KEY Lint**: the game whose KEY limits apply. |
+
+> ⚠️ The reference pose decides the joint-gap counts, and a wrong one gives no
+> warning. A character cut with straight joints at a stand KEY's seats needs
+> **Reference KEY** with the stand KEY it was cut against and **Zero Rotations**,
+> for example the stock `kystand1.key`.
+
+The floor is where physics holds a standing player, not the model's lowest
+point. Jumps, falls, deaths and swims float or sink by design. Floor Contact does
+not measure foot slip; the Python and MCP audits can.
 
 ## 🔧 Troubleshooting
 

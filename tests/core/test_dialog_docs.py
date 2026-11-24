@@ -34,6 +34,9 @@ class DialogDocumentationTests(unittest.TestCase):
             'ExportKey': ('Exporting KEY Animations', 'Importing MAT Textures'),
             'ImportMat': ('Importing MAT Textures', 'Exporting MAT Textures'),
             'ExportMat': ('Exporting MAT Textures', 'Editing 3DO Properties'),
+            'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
+            'ColourPieces': ('Auditing Models', 'Troubleshooting'),
+            'AuditFiles': ('Auditing Models', 'Troubleshooting'),
         }
         for name, bounds in sections.items():
             section = self.section(*bounds)
@@ -87,6 +90,8 @@ class DialogDocumentationTests(unittest.TestCase):
             'ImportModel3do': ('Importing 3DO Models', 'Exporting 3DO Models'),
             'ExportModel3do': ('Exporting 3DO Models', 'Importing KEY Animations'),
             'ImportKey': ('Importing KEY Animations', 'Exporting KEY Animations'),
+            'CheckRetailLimits': ('Auditing Models', 'Troubleshooting'),
+            'AuditFiles': ('Auditing Models', 'Troubleshooting'),
         }
         for name, bounds in sections.items():
             for member in self.classes[name].body:

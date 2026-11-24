@@ -30,7 +30,7 @@ if "bpy" in locals():
     from . import utils as _utils_pkg
     importlib.reload(_utils_pkg)
 
-import bpy, bmesh, mathutils, math, os.path, re
+import bpy, bmesh, json, mathutils, math, os.path, re
 from bpy_extras.io_utils import ImportHelper
 from bpy_extras.io_utils import ExportHelper
 from pathlib import Path
@@ -1043,6 +1043,517 @@ class Model3doPanel(bpy.types.Panel):
             node_properties.label(text='Blender Pivot constraint overrides Native Pivot')
 
 
+# -- Sith Audits panel: native model and KEY audits (sith.audit) in Blender --
+# The operators read the scene or files and write reports to Text datablocks. None of
+# them changes model data; Colour Pieces changes only viewport object colours and the
+# 3D View's colour mode, and records them so that Restore Colours puts them back.
+
+kAuditReportText = 'sith_audit_report'      # on Text datablocks these operators write: the report name
+kSavedObjectColor = '_sith_saved_color'     # an object's colour before Colour Pieces
+kSavedColorType = '_sith_saved_color_type'  # the 3D View colour mode before Colour Pieces (on the scene)
+
+
+def _audit_text(name: str, content: str) -> bpy.types.Text:
+    """Write a report to the Text this operator made for ``name`` before, else to a new one.
+
+    A text the user made is never overwritten, even when it has the report's name.
+    """
+    text = next((t for t in bpy.data.texts if t.library is None and t.get(kAuditReportText) == name), None)
+    if text is None:
+        text = bpy.data.texts.new(name)
+        text[kAuditReportText] = name
+        text.use_fake_user = True
+    text.from_string(content)
+    return text
+
+
+def _audit_document(title: str, lines, report) -> str:
+    """A short readable summary, then the complete plain-data report as JSON."""
+    return '\n'.join([title, '=' * len(title), *lines, '', 'Complete report (plain data):',
+                      json.dumps(report, indent=1, default=str)]) + '\n'
+
+
+def _srgb_to_linear(value: float) -> float:
+    return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+
+def _view3d_space(context):
+    """The 3D View the operator runs in, else the first one on the screen, else None."""
+    space = getattr(context, 'space_data', None)
+    if space is not None and space.type == 'VIEW_3D':
+        return space
+    screen = getattr(context, 'screen', None)
+    for area in (screen.areas if screen is not None else ()):
+        if area.type == 'VIEW_3D':
+            return area.spaces.active
+    return None
+
+
+class CheckRetailLimits(bpy.types.Operator):
+    """Count the active model as the 3DO exporter builds it, against the retail JKDF2/MOTS limits. Writes no file and does not change the model; the report goes to a Text datablock"""
+    bl_idname  = 'sith.check_retail_limits'
+    bl_label   = 'Check Retail Limits'
+    bl_options = {'REGISTER'}
+
+    target: bpy.props.EnumProperty(
+        name        = 'Target',
+        description = 'Game whose retail limits apply. JKDF2 and MOTS load models with the same limits',
+        items       = [('JKDF2', 'JKDF2', 'Jedi Knight: Dark Forces II'),
+                       ('MOTS', 'MOTS', 'Mysteries of the Sith')],
+        default     = 'JKDF2',
+    )
+    absolute_uv: bpy.props.BoolProperty(
+        name        = 'v2.1 Absolute UV',
+        description = 'As in the 3DO export dialog: count the pixel-space UVs a 2.1 export writes',
+        default     = True,
+    )
+    export_vert_colors: bpy.props.BoolProperty(
+        name        = 'Export Vertex Colors',
+        description = 'As in the 3DO export dialog. Corners with different colors stay separate vertices, so this can add vertices',
+        default     = False,
+    )
+    sync_mesh_list: bpy.props.BoolProperty(
+        name        = 'Sync Mesh List with Node Hierarchy',
+        description = 'As in the 3DO export dialog: number meshes in node order, so mesh numbers in the report match the export',
+        default     = True,
+    )
+    bake_pivots: bpy.props.BoolProperty(
+        name        = 'Bake Pivots',
+        description = 'As in the 3DO export dialog: count the model with zero pivots and baked vertices',
+        default     = False,
+    )
+    detail_levels: bpy.props.IntProperty(
+        name        = 'Detail Levels',
+        description = 'As in the 3DO export dialog: geosets to count, 1 to 4, each a copy of the model',
+        default     = 1,
+        min         = 1,
+        max         = 4,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_props_dialog(self)
+
+    def draw(self, context):
+        for name in ('target', 'absolute_uv', 'export_vert_colors', 'sync_mesh_list', 'bake_pivots', 'detail_levels'):
+            self.layout.prop(self, name)
+
+    def execute(self, context):
+        root = _get_export_obj(context, self.report, 'mesh')
+        if root is None:
+            return {'CANCELLED'}
+        from .model import setDetailLevels
+        from .model.model3doExporter import makeModel3doFromObj
+        from .audit.budget import auditBudget, budgetWarnings
+        try:
+            # The same steps as export3do before it writes: build, then copy geoset 0.
+            model = makeModel3doFromObj(root.name, root, uvAbsolute=self.absolute_uv,
+                                        exportVertexColors=self.export_vert_colors,
+                                        sync_mesh_list=self.sync_mesh_list, bakePivots=self.bake_pivots)
+            if not model.meshHierarchy:
+                raise ValueError('No exportable joints were found; select a model hierarchy, not only radius helpers.')
+            setDetailLevels(model, self.detail_levels)
+            report = auditBudget(model, self.target)
+        except (AssertionError, ImportError, ValueError, OSError, RuntimeError) as error:
+            self.report({'ERROR'}, f'Cannot check the retail limits: {error}')
+            return {'CANCELLED'}
+
+        warnings = budgetWarnings(report)
+        geoset = report['geosets'][0] if report['geosets'] else None
+        largest = {key: (geoset['largest'][key] or {}).get('count', 0) if geoset else 0
+                   for key in ('vertices', 'texture_vertices', 'faces')}
+        lines = [f"Model: {root.name}", f"Target: {self.target}", f"Status: {report['status']}",
+                 f"Geosets: {report['geoset_count']}; hierarchy nodes: {report['hierarchy_nodes']}; "
+                 f"materials: {report['materials']}",
+                 f"Largest mesh: {largest['vertices']} vertices, {largest['texture_vertices']} texture vertices, "
+                 f"{largest['faces']} faces",
+                 f"Options: v2.1 Absolute UV {self.absolute_uv}, Export Vertex Colors {self.export_vert_colors}, "
+                 f"Sync Mesh List {self.sync_mesh_list}, Bake Pivots {self.bake_pivots}, "
+                 f"Detail Levels {self.detail_levels}", ''] + (warnings or ['No findings.'])
+        text = _audit_text(f'{root.name} - Retail Limits', _audit_document('Retail limits', lines, report))
+        if report['status'] == 'within_limits':
+            self.report({'INFO'}, f"Within the {self.target} retail limits; largest mesh {largest['vertices']} "
+                                  f"vertices, {largest['faces']} faces. Report: '{text.name}'")
+        else:
+            for line in warnings:
+                self.report({'WARNING'}, line)
+            self.report({'WARNING'}, f"Over the {self.target} retail limits: "
+                                     f"{sum(report['issue_counts'].values())} findings. Report: '{text.name}'")
+        return {'FINISHED'}
+
+
+class ColourPieces(bpy.types.Operator):
+    """Paint each piece of the active model one solid colour in the viewport, to see which piece a lump of surface belongs to. Changes only viewport object colours and the 3D View's colour mode, and records them for Restore Colours"""
+    bl_idname  = 'sith.colour_pieces'
+    bl_label   = 'Colour Pieces'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    by: bpy.props.EnumProperty(
+        name        = 'Colour By',
+        description = 'Which pieces get their own colour',
+        items       = [('NODE', 'Node', 'One colour per hierarchy node, by its exported node number'),
+                       ('PART', 'Rigid Part', "One colour per rigid part: the nodes that move with each of Kyle's joints")],
+        default     = 'NODE',
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def execute(self, context):
+        root = _get_export_obj(context, self.report, 'model')
+        if root is None:
+            return {'CANCELLED'}
+        from .model.model3doExporter import makeModel3doFromObj
+        from .audit.segmentation import pieceColours
+        try:
+            # Exported node numbers, so colours match pieceColours on the exported 3DO.
+            model = makeModel3doFromObj(root.name, root, hierarchyOnly=True)
+            colours = pieceColours(model, by=self.by.lower())
+        except (AssertionError, ValueError, RuntimeError) as error:
+            self.report({'ERROR'}, f'Cannot colour the pieces: {error}')
+            return {'CANCELLED'}
+        painted = 0
+        for node, entry in zip(model.meshHierarchy, colours):
+            obj = node.obj
+            if obj is None or obj.type != 'MESH' or not obj.is_editable:
+                continue
+            if kSavedObjectColor not in obj:
+                obj[kSavedObjectColor] = list(obj.color)
+            obj.color = (*(_srgb_to_linear(c) for c in entry['rgb']), 1.0)
+            painted += 1
+        space = _view3d_space(context)
+        if space is not None and space.shading.color_type != 'OBJECT':
+            if kSavedColorType not in context.scene:
+                context.scene[kSavedColorType] = space.shading.color_type
+            space.shading.color_type = 'OBJECT'
+        self.report({'INFO'}, f"Coloured {painted} meshes by {'node' if self.by == 'NODE' else 'rigid part'}. "
+                              'Restore Colours puts the previous colours back')
+        if space is not None and space.shading.type != 'SOLID':
+            self.report({'INFO'}, 'Object colours show in Solid shading')
+        return {'FINISHED'}
+
+
+class RestoreColours(bpy.types.Operator):
+    """Put back the object colours and the 3D View colour mode that Colour Pieces changed"""
+    bl_idname  = 'sith.restore_colours'
+    bl_label   = 'Restore Colours'
+    bl_options = {'REGISTER', 'UNDO'}
+
+    def execute(self, context):
+        restored = 0
+        for obj in bpy.data.objects:
+            saved = obj.get(kSavedObjectColor)
+            if saved is None or not obj.is_editable:
+                continue
+            obj.color = tuple(saved)
+            del obj[kSavedObjectColor]
+            restored += 1
+        mode = context.scene.get(kSavedColorType)
+        if mode is not None:
+            space = _view3d_space(context)
+            # Leave a colour mode the user has changed since; put back only what Colour Pieces set.
+            if space is not None and space.shading.color_type == 'OBJECT':
+                try:
+                    space.shading.color_type = mode
+                except TypeError:
+                    pass
+            del context.scene[kSavedColorType]
+        if not restored and mode is None:
+            self.report({'INFO'}, 'No colours to restore')
+            return {'CANCELLED'}
+        self.report({'INFO'}, f'Restored the colours of {restored} objects')
+        return {'FINISHED'}
+
+
+def _audit_key_paths(folder: Path, names: str):
+    """Regular .key files in ``folder`` by name, sorted without case; ``names`` selects some."""
+    available = {path.name.casefold(): path for path in folder.iterdir()
+                 if path.is_file() and path.suffix.casefold() == '.key'}
+    if not names.strip():
+        return sorted(available.values(), key=lambda path: (path.name.casefold(), path.name))
+    chosen = []
+    for name in (part.strip() for part in names.split(',')):
+        if not name:
+            continue
+        if Path(name).name != name or name.casefold() not in available:
+            raise ValueError(f"The KEY folder has no file named '{name}'")
+        if available[name.casefold()] not in chosen:
+            chosen.append(available[name.casefold()])
+    return sorted(chosen, key=lambda path: (path.name.casefold(), path.name))
+
+
+class AuditFiles(bpy.types.Operator, ImportHelper):
+    """Audit a 3DO file with the KEYs in a folder: joint gaps, seat offsets, floor contact and KEY lint, as selected. Reads the files only and writes each report to a Text datablock. A full joint-gap sweep can take minutes (about 80 seconds for 91 KEYs on a 14,600-face model), and Blender waits until it ends"""
+    bl_idname    = 'sith.audit_files'
+    bl_label     = 'Audit Files'
+    filename_ext = '.3do'
+
+    filter_glob: bpy.props.StringProperty(
+        default = '*.3do',
+        options = {'HIDDEN'}
+    )
+    key_directory: bpy.props.StringProperty(
+        name        = 'KEY Folder',
+        description = "Folder of the KEYs to audit. Blank uses the 'key' folder beside the 3DO",
+        subtype     = 'DIR_PATH',
+    )
+    key_files: bpy.props.StringProperty(
+        name        = 'KEY Files',
+        description = 'Comma-separated KEY file names in the KEY Folder, for a shorter run. Blank audits every .key file in it',
+    )
+    step: bpy.props.FloatProperty(
+        name        = 'Step',
+        description = 'Sample each KEY every Step frames from frame 0. A larger step is quicker',
+        default     = 2.0,
+        min         = 0.25,
+        max         = 100.0,
+    )
+    joint_gaps: bpy.props.BoolProperty(
+        name        = 'Joint Gaps',
+        description = 'Lines of sight through each joint in every sampled pose (sith.audit.articulation). The slowest check',
+        default     = True,
+    )
+    seat_offsets: bpy.props.BoolProperty(
+        name        = 'Seat Offsets',
+        description = "How far each KEY moves each node from its seat in the reference pose, the usual cause of an opening joint",
+        default     = True,
+    )
+    floor_contact: bpy.props.BoolProperty(
+        name        = 'Floor Contact',
+        description = "Samples where the model's lowest point is under the engine floor or the feet float above it (sith.audit.ground)",
+        default     = True,
+    )
+    key_lint: bpy.props.BoolProperty(
+        name        = 'KEY Lint',
+        description = 'Header, track table and pops between entries of each KEY, read the way the engine reads them (sith.audit.keylint)',
+        default     = True,
+    )
+    reference: bpy.props.EnumProperty(
+        name        = 'Reference Pose',
+        description = 'The pose the pieces were cut in. Joint gaps and seat offsets measure from it, and a wrong one gives no warning',
+        items       = [('REST', 'Rest Pose', 'The pose stored in the 3DO'),
+                       ('KEY', 'Reference KEY', 'The nodes a KEY drives at its frame; every other node at rest')],
+        default     = 'REST',
+    )
+    reference_key: bpy.props.StringProperty(
+        name        = 'Reference KEY File',
+        description = "A file name in the KEY Folder or a path. For Red's Kyle-skeleton characters use the stand KEY they were cut against with Zero Rotations (stock kystand1 for Darth Lilitari)",
+        default     = 'kystand1.key',
+        subtype     = 'FILE_PATH',
+    )
+    reference_frame: bpy.props.FloatProperty(
+        name        = 'Reference Frame',
+        description = 'Frame of the reference KEY',
+        default     = 0.0,
+        min         = 0.0,
+    )
+    zero_rotations: bpy.props.BoolProperty(
+        name        = 'Zero Rotations',
+        description = "Give the nodes the reference KEY drives zero rotation: the pose characters cut with straight joints at the stand KEY's seats were built in",
+        default     = True,
+    )
+    move_size: bpy.props.FloatProperty(
+        name        = 'Move Size',
+        description = "The player template's movesize, which sets the engine floor (stock walkplayer: 0.065)",
+        default     = 0.065,
+        min         = 0.0,
+        precision   = 4,
+    )
+    crouch_keys: bpy.props.StringProperty(
+        name        = 'Crouch KEYs',
+        description = 'Comma-separated KEY file names that play on the crouch floor. Names not in the run are ignored',
+        default     = 'kycrchgn.key, kycrchbk.key',
+    )
+    lint_target: bpy.props.EnumProperty(
+        name        = 'Lint Target',
+        description = 'Game whose KEY limits the lint applies',
+        items       = [('JKDF2', 'JKDF2', 'Jedi Knight: Dark Forces II'),
+                       ('MOTS', 'MOTS', 'Mysteries of the Sith')],
+        default     = 'JKDF2',
+    )
+
+    def draw(self, context):
+        layout = self.layout
+        keys = layout.box().column()
+        keys.label(text='KEYs')
+        keys.prop(self, 'key_directory')
+        keys.prop(self, 'key_files')
+        keys.prop(self, 'step')
+        checks = layout.box().column()
+        checks.label(text='Checks')
+        for name in ('joint_gaps', 'seat_offsets', 'floor_contact', 'key_lint'):
+            checks.prop(self, name)
+        reference = layout.box().column()
+        reference.prop(self, 'reference')
+        if self.reference == 'KEY':
+            reference.prop(self, 'reference_key')
+            reference.prop(self, 'reference_frame')
+            reference.prop(self, 'zero_rotations')
+        if self.floor_contact:
+            floor = layout.box().column()
+            floor.prop(self, 'move_size')
+            floor.prop(self, 'crouch_keys')
+        if self.key_lint:
+            layout.prop(self, 'lint_target')
+
+    def execute(self, context):
+        if not self.filepath or not os.path.isfile(self.filepath) or not self.filepath.lower().endswith('.3do'):
+            self.report({'ERROR'}, 'Select an existing .3do file')
+            return {'CANCELLED'}
+        if not (self.joint_gaps or self.seat_offsets or self.floor_contact or self.key_lint):
+            self.report({'ERROR'}, 'Select at least one check')
+            return {'CANCELLED'}
+        try:
+            reports = self._audit(context, Path(self.filepath))
+        except (AssertionError, ValueError, OSError, EOFError, TypeError) as error:
+            self.report({'ERROR'}, f'Cannot audit the files: {error}')
+            return {'CANCELLED'}
+        summary = ', '.join(f'{label}: {status}' for label, status, _ in reports)
+        names = ', '.join(f"'{text}'" for _, _, text in reports)
+        self.report({'INFO'}, f'{summary}. Reports: {names}')
+        return {'FINISHED'}
+
+    def _audit(self, context, modelPath: Path):
+        from .audit import articulation, ground, keylint
+        from .audit.pose import keyFrameTimes
+        from .key.keyLoader import loadKey
+        from .model.model3doLoader import load3do
+
+        folder = Path(bpy.path.abspath(self.key_directory)) if self.key_directory else modelPath.parent / 'key'
+        if not folder.is_dir():
+            raise ValueError(f'KEY folder not found: {folder}')
+        paths = _audit_key_paths(folder, self.key_files)
+        if not paths:
+            raise ValueError(f'The KEY folder has no .key files: {folder}')
+        model, _ = load3do(modelPath)
+        if not model.meshHierarchy or not model.geosets:
+            raise ValueError('The 3DO has no hierarchy or geometry to audit')
+        keys, skipped = {}, []
+        for path in paths:
+            try:
+                keys[path.name] = loadKey(path)
+            except Exception as error:  # one unreadable KEY is reported, not fatal (as loadKeyFolder)
+                skipped.append(f'{path.name}: {error}')
+        reference = None
+        if self.reference == 'KEY':
+            refPath = Path(bpy.path.abspath(self.reference_key)) if self.reference_key else None
+            if refPath is None or not self.reference_key.strip():
+                raise ValueError('Give the Reference KEY File')
+            if not refPath.is_absolute():
+                refPath = folder / self.reference_key
+            standKey = loadKey(refPath)
+            reference = articulation.referencePose(model, standKey, self.reference_frame,
+                                                   zeroRotations=self.zero_rotations)
+        inputs = [f'3DO: {modelPath}', f'KEY folder: {folder}',
+                  f'KEYs: {len(keys)} read' + (f', {len(skipped)} could not be read' if skipped else ''),
+                  *(f'  not read: {line}' for line in skipped),
+                  f"Reference: {reference.description if reference is not None else 'rest pose'}",
+                  f'Step: {self.step:g} frames', '']
+        name = modelPath.name
+        results = []
+
+        def finish(label, report, lines):
+            text = _audit_text(f'{name} - {label}', _audit_document(label, inputs + lines, report))
+            results.append((label, report['status'], text.name))
+
+        if (self.joint_gaps or self.seat_offsets or self.floor_contact) and not keys:
+            raise ValueError('No KEY could be read: ' + '; '.join(skipped[:3]))
+        wm = context.window_manager
+        if self.joint_gaps:
+            total = sum(len(keyFrameTimes(key, self.step)) for key in keys.values())
+            done = [0]
+
+            def onPose(keyName, frame, joints):
+                done[0] += 1
+                wm.progress_update(done[0])
+
+            wm.progress_begin(0, max(total, 1))
+            try:
+                report = articulation.auditArticulation(model, keys, step=self.step, reference=reference, onPose=onPose)
+            finally:
+                wm.progress_end()
+            lines = [f"Status: {report['status']}", f"Totals: {report['totals']}", '']
+            for f in report['findings']:
+                if f['code'] == 'daylight':
+                    lines.append(f"{f['joint']}: {f['key']} frame {f['frame']:g}, {f['lines']} lines, "
+                                 f"separation {f['separation']:.5f}")
+                else:
+                    lines.append(f"{f['joint']}: not measured ({f['reason']})")
+            finish('Joint Gaps', report, lines + ['', report['reading']])
+        if self.seat_offsets:
+            report = articulation.seatOffsets(model, keys, reference=reference)
+            lines = [f"Status: {report['status']}", '']
+            lines += [f"{f['key']}: {f['name']} {f['offset']:.6f} at frame {f['frame']:g}" for f in report['findings']]
+            finish('Seat Offsets', report, lines)
+        if self.floor_contact:
+            standing = ground.thingFloorHeight(model, self.move_size)
+            crouching = ground.thingFloorHeight(model, self.move_size, crouching=True)
+            crouch = {part.strip().casefold() for part in self.crouch_keys.split(',') if part.strip()}
+            sequences = [ground.keySequence(key, self.step, name=keyName,
+                                            floor=crouching if keyName.casefold() in crouch else None)
+                         for keyName, key in keys.items()]
+            report = ground.auditFloorContact(model, sequences, floor=standing, step=self.step)
+            lines = [f"Status: {report['status']}", f'Floor: z = {standing:.6f}; crouch floor: z = {crouching:.6f}', '']
+            for f in report['findings']:
+                size = f.get('depth', f.get('height'))
+                lines.append(f"{f['sequence']}: {f['code']} at {f['time']:g}" + (f', {size:.5f}' if size is not None else ''))
+            finish('Floor Contact', report, lines)
+        if self.key_lint:
+            # Lint reads KEYs the way the engine does, keeping tracks the strict loader refuses.
+            order = {'incompatible': 0, 'review': 1, 'consistent': 2, 'no_tracks': 3}
+            rows, perKey, statuses = [], {}, []
+            for path in paths:
+                try:
+                    key = loadKey(path, strictTracks=False)
+                except Exception as error:  # an unreadable KEY is reported, not fatal
+                    rows.append(f'{path.name}: review, could not be read ({error})')
+                    perKey[path.name] = {'error': str(error)}
+                    statuses.append('review')
+                    continue
+                header = keylint.lintKeyHeader(key, model, target=self.lint_target)
+                try:
+                    pops = keylint.scanKeyPops(key, model)
+                    popStatus = pops['status']
+                except ValueError as error:
+                    pops = {'status': 'not_scanned', 'reason': str(error), 'issue_counts': {}, 'findings': []}
+                    popStatus = 'review'
+                status = min(header['status'], popStatus, key=order.get)
+                statuses.append(status)
+                perKey[path.name] = {'header': header, 'pops': pops}
+                if status != 'consistent':
+                    counts = {**header['issue_counts'], **(header['binding'] or {}).get('issue_counts', {}),
+                              **pops['issue_counts']}
+                    rows.append(f'{path.name}: {status} {counts}')
+            overall = ('incompatible' if 'incompatible' in statuses else 'review' if 'review' in statuses else
+                       'no_tracks' if statuses and all(s == 'no_tracks' for s in statuses) else 'consistent')
+            report = {'status': overall, 'target': self.lint_target, 'keys': perKey}
+            finish('KEY Lint', report, [f'Status: {overall}', ''] + (rows or ['No findings.']))
+        return results
+
+
+class SithAuditPanel(bpy.types.Panel):
+    """Native model and KEY audits for the active model or for files"""
+    bl_idname      = 'VIEW3D_PT_sith_audits'
+    bl_label       = 'Sith Audits'
+    bl_space_type  = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category    = 'Sith'
+
+    def draw(self, context):
+        layout = self.layout
+        column = layout.column(align=True)
+        column.operator(CheckRetailLimits.bl_idname, icon='CHECKMARK')
+        row = column.row(align=True)
+        row.operator(ColourPieces.bl_idname, icon='COLOR')
+        row.operator(RestoreColours.bl_idname, icon='LOOP_BACK')
+        layout.operator(AuditFiles.bl_idname, icon='FILE_FOLDER')
+        layout.label(text='Reports open in the Text Editor')
+
+
 # -- Update callbacks for Mesh3doFaceLayer properties --
 # These fire only when the user actually edits a value in the UI panel,
 # so only the changed property is written to the selected faces.
@@ -1243,7 +1754,12 @@ classes = (
     ImportModel3do,
     ExportModel3do,
     ImportKey,
-    ExportKey
+    ExportKey,
+    CheckRetailLimits,
+    ColourPieces,
+    RestoreColours,
+    AuditFiles,
+    SithAuditPanel,
 )
 
 def menu_func_export(self, context):

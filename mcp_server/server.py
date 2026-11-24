@@ -20,9 +20,30 @@ from typing import Any
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = "1.2.0"
 MAX_INPUT = 64 * 1024 * 1024
 MAX_LOG = 1024 * 1024
 MAX_REPORT = 256 * 1024
+# KEY folders: regular .key files directly in the folder, per folder and job.
+MAX_KEY_FILES = 512
+MAX_KEY_BYTES = 64 * 1024 * 1024
+# Everything one audit job snapshots (models, KEYs and reference KEY together).
+MAX_JOB_INPUT = 256 * 1024 * 1024
+MAX_CHARACTERS = 8
+STOCK_MOVE_SIZE = 0.065   # the stock walkplayer template's movesize, which sets the engine floor
+AUDIT_SCHEMA = "blender-sith-mcp-audit-v1"
+# Accepted report status values, by result section.
+AUDIT_STATUSES = {
+    "budget": {"within_limits", "over_limits", "counts_only"},
+    "segmentation": {"clean", "review", "suspect"},
+    "articulation": {"clean", "review", "no_joints"},
+    "seat_offsets": {"on_seat", "off_seat", "no_tracks"},
+    "ground": {"clear", "review", "empty"},
+    "lint": {"consistent", "review", "incompatible", "no_tracks"},
+    "track_slots": {"consistent", "review", "incompatible"},
+}
+AUDIT_TOOLS = ["audit_budget", "audit_segmentation", "audit_articulation", "audit_ground", "lint_keys",
+               "audit_track_slots"]
 
 
 def load_helper(name, path):
@@ -78,6 +99,49 @@ def bounded_json(path):
     if not isinstance(value, dict):
         raise ValueError("Child report must be an object")
     return value
+
+
+def number(name, value, low, high):
+    """A finite int or float (not bool) within [low, high]."""
+    if type(value) not in (int, float) or not math.isfinite(value) or not low <= value <= high:
+        raise ValueError(f"{name} must be a finite number from {low:g} to {high:g}")
+    return float(value)
+
+
+def whole(name, value, low, high):
+    """An int (not bool) within [low, high]."""
+    if type(value) is not int or not low <= value <= high:
+        raise ValueError(f"{name} must be a whole number from {low} to {high}")
+    return value
+
+
+def choice(name, value, choices):
+    if value not in choices:
+        raise ValueError(f"{name} must be one of: {', '.join(map(str, choices))}")
+    return value
+
+
+def flag(name, value):
+    if type(value) is not bool:
+        raise ValueError(f"{name} must be true or false")
+    return value
+
+
+def file_names(name, values):
+    """Plain .key file names, each once: no folders, links or wildcards."""
+    if values is None:
+        return None
+    if not isinstance(values, list) or not values or len(values) > MAX_KEY_FILES:
+        raise ValueError(f"{name} must list 1 to {MAX_KEY_FILES} KEY file names")
+    seen = set()
+    for value in values:
+        if (not isinstance(value, str) or not value.lower().endswith(".key") or "\x00" in value
+                or any(mark in value for mark in ("/", "\\", ":")) or value in (".", "..")):
+            raise ValueError(f"{name} must hold plain .key file names, not paths: {value!r}")
+        if value.casefold() in seen:
+            raise ValueError(f"{name} names {value!r} twice")
+        seen.add(value.casefold())
+    return list(values)
 
 
 class Service:
@@ -136,6 +200,79 @@ class Service:
         destination.write_bytes(data)
         return hashlib.sha256(data).hexdigest()
 
+    def key_folder(self, value, names=None):
+        """List the regular .key files directly in an allowlisted folder, before any job exists.
+
+        Subfolders are not searched. Links, junctions and other special .key entries are skipped
+        and counted. ``names`` selects files by name, ignoring case. The selection must hold 1 to
+        MAX_KEY_FILES files of at most MAX_KEY_BYTES together. KEY names that differ only in case
+        are refused: the engine looks KEYs up without case.
+        """
+        folder = checked_path(value, directory=True)
+        if not any(folder.is_relative_to(root) for root in self.read_roots):
+            raise ValueError("KEY folder is outside configured read roots")
+        found, skipped = {}, {"links": 0, "not_regular": 0}
+        with os.scandir(folder) as entries:
+            for entry in entries:
+                if not entry.name.lower().endswith(".key"):
+                    continue
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0):
+                    skipped["links"] += 1
+                elif not stat.S_ISREG(info.st_mode):
+                    skipped["not_regular"] += 1
+                else:
+                    found.setdefault(entry.name.casefold(), []).append((entry.name, info.st_size))
+        wanted = sorted(found) if names is None else [name.casefold() for name in file_names("keys", names)]
+        chosen = []
+        for key in wanted:
+            if key not in found:
+                raise ValueError(f"KEY folder has no regular file named {names[wanted.index(key)]!r}")
+            if len(found[key]) > 1:
+                raise ValueError("KEY names differ only in case: " + ", ".join(sorted(n for n, _ in found[key])))
+            chosen.append(found[key][0])
+        chosen.sort(key=lambda item: (item[0].casefold(), item[0]))
+        if not chosen:
+            raise ValueError("KEY folder has no regular .key files")
+        if len(chosen) > MAX_KEY_FILES:
+            raise ValueError(f"Select at most {MAX_KEY_FILES} KEYs; the folder has {len(chosen)}")
+        if sum(size for _, size in chosen) > MAX_KEY_BYTES:
+            raise ValueError("Selected KEYs exceed the 64 MiB folder limit")
+        return {"folder": folder, "files": [(name, folder / name, size) for name, size in chosen], "skipped": skipped}
+
+    def snapshot_keys(self, listing, destination):
+        """Copy a listed KEY selection into a new job folder, re-checking each file and the limits."""
+        destination.mkdir(parents=True)
+        files, total = [], 0
+        for name, path, _ in listing["files"]:
+            source = checked_path(str(path))
+            digest = self.snapshot(source, destination / name)
+            size = (destination / name).stat().st_size
+            total += size
+            if total > MAX_KEY_BYTES:
+                raise ValueError("KEY folder grew beyond the 64 MiB limit")
+            files.append({"name": name, "size": size, "sha256": digest})
+        manifest = {"folder": str(listing["folder"]), "count": len(files), "bytes": total,
+                    "skipped": listing["skipped"], "files": files}
+        return manifest, [str(destination / item["name"]) for item in files]
+
+    def reference_input(self, reference_key, reference_frame, zero_rotations):
+        """Validate the reference pose: the rest pose, or a KEY with a frame and an explicit rotation rule."""
+        frame = number("reference_frame", reference_frame, -1e6, 1e6)
+        if zero_rotations is not None:
+            flag("zero_rotations", zero_rotations)
+        if reference_key is None:
+            if zero_rotations:
+                raise ValueError("zero_rotations needs reference_key: the rest pose has no KEY to zero")
+            if frame != 0:
+                raise ValueError("reference_frame needs reference_key")
+            return None, {"pose": "rest"}
+        if zero_rotations is None:
+            raise ValueError("With reference_key, state zero_rotations: true for characters cut with straight joints at "
+                             "the stand KEY's seats (Red's Kyle-skeleton builds), false to keep the KEY's rotations")
+        path = self.source(reference_key, ".key")
+        return path, {"pose": "key", "name": path.name, "frame": frame, "zero_rotations": zero_rotations}
+
     @contextmanager
     def job(self, operation):
         if not self.lock.acquire(blocking=False):
@@ -152,13 +289,18 @@ class Service:
             self.lock.release()
 
     def info(self):
-        return {"server": "blender-sith", "version": "1.1.0", "transport": "stdio",
+        return {"server": "blender-sith", "version": VERSION, "transport": "stdio",
                 "runtime_route": self.route, "timeout_seconds": self.timeout, "threads": self.threads,
                 "read_roots": [str(p) for p in self.read_roots], "job_root": str(self.job_root),
-                "input_limit_bytes": MAX_INPUT, "tools": ["server_info", "inspect_3do", "audit_model_key", "convert_3do_to_blend", "run_regression", "build_extension"],
+                "input_limit_bytes": MAX_INPUT, "key_folder_limits": {"files": MAX_KEY_FILES, "bytes": MAX_KEY_BYTES},
+                "job_input_limit_bytes": MAX_JOB_INPUT, "report_limit_bytes": MAX_REPORT,
+                "tools": ["server_info", "inspect_3do", "audit_model_key", "convert_3do_to_blend", "run_regression", "build_extension",
+                          *AUDIT_TOOLS],
                 "limits": ["Local trusted-user service, not an OS sandbox", "No interactive session or arbitrary Python tool",
                            "Geometry-only import: no implicit MAT/CMP reads; JK 2.1 UV normalization needs texture dimensions",
-                           "No game-runtime compatibility claim"]}
+                           "No game-runtime compatibility claim",
+                           "Audits are geometric checks of native files; a human or a game test must still accept a model",
+                           "Audit jobs share the configured timeout; a full joint-gap sweep of 91 KEYs can take minutes"]}
 
     def environment(self, job):
         return runner.isolated_environment(job, self.threads, prefix="prefs-")
@@ -310,11 +452,190 @@ class Service:
             (job / "receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
             return result
 
+    def audit_job(self, kind, parameters, sections, *, model=None, keys=None, reference=None, characters=()):
+        """Snapshot the named inputs, run one fixed audit in the configured runtime, accept a bounded result.
+
+        ``model`` and ``reference`` are checked paths, ``keys`` a ``key_folder`` listing and
+        ``characters`` (name, model path, listing) triples. ``sections`` maps each result section the
+        audit must return to its accepted status values. The worker writes the complete report to
+        ``report.json`` and the bounded summary returned here to ``result.json``.
+        """
+        listings = ([keys] if keys is not None else []) + [listing for _, _, listing in characters]
+        paths = [path for path in (model, reference) if path is not None] + [path for _, path, _ in characters]
+        sizes = [path.stat().st_size for path in paths] + [size for listing in listings for _, _, size in listing["files"]]
+        if sum(sizes) > MAX_JOB_INPUT:
+            raise ValueError("The inputs of one audit job exceed the 256 MiB limit")
+        with self.job("audit-" + kind) as job:
+            inputs, request_inputs = {}, {}
+            if model is not None:
+                inputs["model"] = {"source": str(model), "sha256": self.snapshot(model, job / "input.3do"),
+                                   "size": (job / "input.3do").stat().st_size}
+                request_inputs["model"] = str(job / "input.3do")
+            if reference is not None:
+                inputs["reference_key"] = {"source": str(reference), "sha256": self.snapshot(reference, job / "reference.key"),
+                                           "size": (job / "reference.key").stat().st_size}
+                request_inputs["reference"] = str(job / "reference.key")
+            if keys is not None:
+                inputs["keys"], request_inputs["keys"] = self.snapshot_keys(keys, job / "keys")
+            if characters:
+                inputs["characters"], request_inputs["characters"] = [], []
+                for index, (name, path, listing) in enumerate(characters):
+                    folder = job / "characters" / str(index)
+                    folder.mkdir(parents=True)
+                    manifest, paths = self.snapshot_keys(listing, folder / "keys")
+                    digest = self.snapshot(path, folder / "input.3do")
+                    inputs["characters"].append({"name": name, "model": {"source": str(path), "sha256": digest,
+                                                 "size": (folder / "input.3do").stat().st_size}, "keys": manifest})
+                    request_inputs["characters"].append({"name": name, "model": str(folder / "input.3do"), "keys": paths})
+            total = sum(path.stat().st_size for path in job.rglob("*") if path.is_file())
+            if total > MAX_JOB_INPUT:
+                raise ValueError("The inputs of one audit job grew beyond the 256 MiB limit")
+            before = runner.source_hashes(self.addon)
+            request = job / "request.json"
+            request.write_text(json.dumps({"kind": kind, "addon": str(self.addon), "threads": self.threads,
+                                           "bpy_site": str(self.bpy_site) if self.bpy_site else None,
+                                           "parameters": parameters, "inputs": request_inputs,
+                                           "report": str(job / "report.json"), "result": str(job / "result.json"),
+                                           "progress": str(job / "progress.json")}), encoding="utf-8")
+            process = self.execute(self.runtime_command(ROOT / "mcp_server" / "audit_worker.py", request), job)
+            result = {"job_id": job.name, "job_directory": str(job), "audit_kind": kind, "inputs": inputs, **process}
+            if process["status"] == "process_failed" and (job / "diagnostic.json").is_file():
+                result["diagnostic"] = bounded_json(job / "diagnostic.json").get("detail")
+            if process["status"] != "completed" and (job / "progress.json").is_file():
+                try:
+                    result["progress"] = bounded_json(job / "progress.json")
+                except (ValueError, OSError):
+                    pass
+            result["source_unchanged"] = before == runner.source_hashes(self.addon)
+            if process["status"] == "completed":
+                try:
+                    audit = bounded_json(job / "result.json")
+                    if audit.get("schema") != AUDIT_SCHEMA or audit.get("kind") != kind:
+                        raise ValueError("Wrong audit result schema")
+                    for section, accepted in sections.items():
+                        if not isinstance(audit.get(section), dict) or audit[section].get("status") not in accepted:
+                            raise ValueError("Missing audit section " + section)
+                    report = checked_path(str(job / "report.json"))
+                    result["audit"] = audit
+                    result["report"] = {"path": str(report), "sha256": runner.digest(report), "size": report.stat().st_size}
+                    result["status"] = "passed" if result["source_unchanged"] else "source_changed"
+                except (ValueError, OSError):
+                    result["status"] = "invalid_report"
+            (job / "receipt.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+            return result
+
+    def audit_budget(self, path, target="JKDF2"):
+        choice("target", target, ("JKDF2", "MOTS", "IJIM", "GRIM"))
+        return self.audit_job("budget", {"target": target}, {"budget": AUDIT_STATUSES["budget"]}, model=self.source(path))
+
+    def audit_segmentation(self, model_path, reference_key=None, reference_frame=0.0, zero_rotations=None,
+                           key_dir=None, keys=None, step=2.0, geoset=0, detail="review"):
+        step = number("step", step, 0.05, 1000)
+        geoset = whole("geoset", geoset, 0, 63)
+        choice("detail", detail, ("high", "review", "info"))
+        if keys is not None and key_dir is None:
+            raise ValueError("keys selects files of key_dir; give key_dir")
+        reference, pose = self.reference_input(reference_key, reference_frame, zero_rotations)
+        model = self.source(model_path)
+        listing = self.key_folder(key_dir, keys) if key_dir is not None else None
+        parameters = {"reference": pose, "step": step, "geoset": geoset, "detail": detail}
+        return self.audit_job("segmentation", parameters, {"segmentation": AUDIT_STATUSES["segmentation"]},
+                              model=model, keys=listing, reference=reference)
+
+    def audit_articulation(self, model_path, key_dir, keys=None, step=2.0, reference_key=None, reference_frame=0.0,
+                           zero_rotations=None, joints="derived", scale=1.0, seat_offsets=True, geoset=0):
+        step = number("step", step, 0.05, 1000)
+        scale = number("scale", scale, 0.01, 100)
+        geoset = whole("geoset", geoset, 0, 63)
+        choice("joints", joints, ("derived", "kyle"))
+        flag("seat_offsets", seat_offsets)
+        reference, pose = self.reference_input(reference_key, reference_frame, zero_rotations)
+        model = self.source(model_path)
+        listing = self.key_folder(key_dir, keys)
+        sections = {"articulation": AUDIT_STATUSES["articulation"]}
+        if seat_offsets:
+            sections["seat_offsets"] = AUDIT_STATUSES["seat_offsets"]
+        parameters = {"reference": pose, "step": step, "joints": joints, "scale": scale, "seat_offsets": seat_offsets,
+                      "geoset": geoset}
+        return self.audit_job("articulation", parameters, sections, model=model, keys=listing, reference=reference)
+
+    def audit_ground(self, model_path, key_dir, keys=None, step=1.0, floor="engine", move_size=STOCK_MOVE_SIZE,
+                     thing_height=0.0, crouch_keys=None, contacts=None, travel=None, geoset=0):
+        step = number("step", step, 0.05, 1000)
+        geoset = whole("geoset", geoset, 0, 63)
+        if floor not in ("engine", "rest"):
+            if type(floor) not in (int, float):
+                raise ValueError("floor must be 'engine', 'rest' or a height in JK units")
+            floor = number("floor", floor, -1000, 1000)
+        move_size = number("move_size", move_size, 0, 100)
+        thing_height = number("thing_height", thing_height, 0, 100)
+        if floor != "engine" and (crouch_keys or move_size != STOCK_MOVE_SIZE or thing_height):
+            raise ValueError("crouch_keys, move_size and thing_height set the engine floor; use floor='engine'")
+        crouch = file_names("crouch_keys", crouch_keys) or []
+        if contacts is not None:
+            if (not isinstance(contacts, list) or not contacts or len(contacts) > 64
+                    or any(type(c) not in (int, str) or (type(c) is int and c < 0) for c in contacts)):
+                raise ValueError("contacts must list 1 to 64 node names or indices")
+        directions = {}
+        if travel is not None:
+            if not isinstance(travel, dict) or len(travel) > MAX_KEY_FILES:
+                raise ValueError("travel maps KEY file names to (x, y) directions")
+            file_names("travel", list(travel))
+            for name, direction in travel.items():
+                if (not isinstance(direction, list) or len(direction) != 2
+                        or any(type(v) not in (int, float) or not math.isfinite(v) for v in direction)
+                        or not any(direction)):
+                    raise ValueError(f"travel[{name!r}] must be a nonzero (x, y) direction")
+                directions[name] = [float(v) for v in direction]
+        model = self.source(model_path)
+        listing = self.key_folder(key_dir, keys)
+        selected = {name.casefold(): name for name, _, _ in listing["files"]}
+        for name in [*crouch, *directions]:
+            if name.casefold() not in selected:
+                raise ValueError(f"{name!r} is not among the selected KEYs")
+        parameters = {"step": step, "floor": floor, "move_size": move_size, "thing_height": thing_height,
+                      "crouch_keys": [selected[name.casefold()] for name in crouch], "contacts": contacts,
+                      "travel": {selected[name.casefold()]: value for name, value in directions.items()},
+                      "geoset": geoset}
+        return self.audit_job("ground", parameters, {"ground": AUDIT_STATUSES["ground"]}, model=model, keys=listing)
+
+    def lint_keys(self, key_dir, keys=None, model_path=None, target="JKDF2", pops=True):
+        choice("target", target, ("JKDF2", "MOTS"))
+        flag("pops", pops)
+        model = self.source(model_path) if model_path is not None else None
+        listing = self.key_folder(key_dir, keys)
+        return self.audit_job("lint", {"target": target, "pops": pops}, {"lint": AUDIT_STATUSES["lint"]},
+                              model=model, keys=listing)
+
+    def audit_track_slots(self, characters, custom=18):
+        if not isinstance(characters, list) or not 2 <= len(characters) <= MAX_CHARACTERS:
+            raise ValueError(f"Give 2 to {MAX_CHARACTERS} characters")
+        if type(custom) is int:
+            whole("custom", custom, 0, 1024)
+        elif isinstance(custom, list):
+            if not custom or len(custom) > 64 or any(type(s) is not int or not 0 <= s <= 1024 for s in custom):
+                raise ValueError("custom slots must be 1 to 64 slot numbers from 0 to 1024")
+        elif custom != "names":
+            raise ValueError("custom must be a first slot number, 'names' or a list of slot numbers")
+        entries, names = [], set()
+        for item in characters:
+            if not isinstance(item, dict) or set(item) - {"name", "model_path", "key_dir", "keys"}:
+                raise ValueError("Each character is {name, model_path, key_dir, keys (optional)}")
+            name = item.get("name")
+            if not isinstance(name, str) or not name.strip() or len(name) > 64 or "\x00" in name:
+                raise ValueError("Each character needs a name of 1 to 64 characters")
+            if name.casefold() in names:
+                raise ValueError(f"Character name {name!r} is given twice")
+            names.add(name.casefold())
+            entries.append((name, self.source(item.get("model_path")), self.key_folder(item.get("key_dir"), item.get("keys"))))
+        return self.audit_job("track_slots", {"custom": custom}, {"track_slots": AUDIT_STATUSES["track_slots"]},
+                              characters=entries)
+
 
 def create_server(service):
     from mcp.server import MCPServer
     from mcp.server.mcpserver.exceptions import ToolError
-    server = MCPServer("blender-sith", version="1.1.0", instructions="Operate only on explicitly authorized 3DO and KEY inputs. Outputs are new jobs. Inspect status, receipts and limitations before claiming success.")
+    server = MCPServer("blender-sith", version=VERSION, instructions="Operate only on explicitly authorized 3DO and KEY inputs. Outputs are new jobs. Inspect status, receipts and limitations before claiming success. An audit's status passed means the audit ran; its verdict is in audit.<section>.status, and a count is a lead to look at, not a verdict.")
 
     def invoke(fn, *args):
         try:
@@ -351,6 +672,48 @@ def create_server(service):
     def build_extension() -> dict[str, Any]:
         """Build the configured source checkout's sith extension reproducibly with SHA-256 receipt. A configured Blender CLI also runs its built-in extension validator; Python+bpy explicitly reports validation not_run. Does not publish or install."""
         return invoke(service.package)
+
+    @server.tool()
+    def audit_budget(path: str, target: str = "JKDF2") -> dict[str, Any]:
+        """Count one allowlisted .3do against the retail JKDF2/MOTS limits (512 vertices, 768 texture vertices and 512 faces per mesh, 24 corners per face, 4 geosets, 64 nodes). target JKDF2 or MOTS gives a verdict; IJIM or GRIM gives counts only. Counts the file as stored. Read audit.budget.status and audit.budget.warnings."""
+        return invoke(service.audit_budget, path, target)
+
+    @server.tool()
+    def audit_segmentation(model_path: str, reference_key: str | None = None, reference_frame: float = 0.0,
+                           zero_rotations: bool | None = None, key_dir: str | None = None, keys: list[str] | None = None,
+                           step: float = 2.0, geoset: int = 0, detail: str = "review") -> dict[str, Any]:
+        """Cut lint: find surface a cut left in the wrong rigid piece (ghosts) of one .3do. The reference must be the pose the pieces were cut in: the rest pose by default, or reference_key (an allowlisted .key) at reference_frame. For Red's Kyle-skeleton characters pass the stand KEY they were cut against with zero_rotations=true (stock kystand1 for Darth Lilitari; Biddy's own kystand1); a wrong reference gives no warning. key_dir (optional, with keys as a subset) adds test poses every step frames for separation. Read audit.segmentation.status (clean, review, suspect) and findings; a finding is a lead, not a verdict."""
+        return invoke(service.audit_segmentation, model_path, reference_key, reference_frame, zero_rotations,
+                      key_dir, keys, step, geoset, detail)
+
+    @server.tool()
+    def audit_articulation(model_path: str, key_dir: str, keys: list[str] | None = None, step: float = 2.0,
+                           reference_key: str | None = None, reference_frame: float = 0.0,
+                           zero_rotations: bool | None = None, joints: str = "derived", scale: float = 1.0,
+                           seat_offsets: bool = True, geoset: int = 0) -> dict[str, Any]:
+        """Joint-gap sweep: daylight through each joint in every sampled pose of the KEYs in key_dir (regular .key files; keys selects a subset by file name), plus each KEY's seat offsets. Counts depend on the reference pose, and a wrong one gives no warning: the rest pose by default, or reference_key at reference_frame with an explicit zero_rotations. For Red's Kyle-skeleton characters pass the stand KEY they were cut against with zero_rotations=true (stock kystand1 for Darth Lilitari; Biddy's own kystand1). joints 'kyle' uses Kyle's 15 joints; scale multiplies the anchor lengths for characters of another size. Slow: about 80 s for 91 KEYs on a 14,600-face model at step 2, after the model loads; the job stops at the configured timeout with status timeout and its progress. Use keys or a larger step for a quicker run. A count is a lead, not a verdict."""
+        return invoke(service.audit_articulation, model_path, key_dir, keys, step, reference_key, reference_frame,
+                      zero_rotations, joints, scale, seat_offsets, geoset)
+
+    @server.tool()
+    def audit_ground(model_path: str, key_dir: str, keys: list[str] | None = None, step: float = 1.0,
+                     floor: str | float = "engine", move_size: float = STOCK_MOVE_SIZE, thing_height: float = 0.0,
+                     crouch_keys: list[str] | None = None, contacts: list[str | int] | None = None,
+                     travel: dict[str, list[float]] | None = None, geoset: int = 0) -> dict[str, Any]:
+        """Floor contact (below_floor, floating) and contact slip of one .3do over each KEY in key_dir played alone every step frames. floor 'engine' is where physics holds the thing: move_size and thing_height are the player template's movesize and height (stock walkplayer: 0.065 and 0), and crouch_keys play on the crouch floor. floor 'rest' is the rest pose's lowest point; a number is a height. contacts (node names or indices, such as the feet) adds slip; travel maps movement-controlled KEY names to their (x, y) direction, for example kywalkf.key [0, 1]. Jumps, falls, deaths and swims float or sink by design."""
+        return invoke(service.audit_ground, model_path, key_dir, keys, step, floor, move_size, thing_height,
+                      crouch_keys, contacts, travel, geoset)
+
+    @server.tool()
+    def lint_keys(key_dir: str, keys: list[str] | None = None, model_path: str | None = None, target: str = "JKDF2",
+                  pops: bool = True) -> dict[str, Any]:
+        """Lint the KEYs in key_dir for JKDF2 or MOTS: header and track table as the engine loads them (tracks past JOINTS, out-of-order and late entries, repeated tracks) and, with pops, Euler flips, wide steps, form switches and speed spikes between entries. KEYs load the way the engine reads them, keeping tracks the strict loader refuses. model_path adds the binding audit, joints the KEY cannot drive and position jumps. Read audit.lint.status, totals and keys_flagged."""
+        return invoke(service.lint_keys, key_dir, keys, model_path, target, pops)
+
+    @server.tool()
+    def audit_track_slots(characters: list[dict[str, Any]], custom: int | str | list[int] = 18) -> dict[str, Any]:
+        """Check whether several characters' KEYs can share one pack. characters lists 2 to 8 entries {name, model_path, key_dir, keys (optional subset)}. For every KEY file name two characters both ship, custom slots (default: 18 and up, past Kyle's skeleton; 'names' for slots the models name differently; or a list of slots) that both drive differently are slot_collision, and a slot one drives where the other's model has a visible node its own KEY leaves alone is slot_intrusion."""
+        return invoke(service.audit_track_slots, characters, custom)
 
     return server
 
