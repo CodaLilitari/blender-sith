@@ -28,6 +28,7 @@ from sith.material.mat import _read_header, _read_mipmap
 from sith.material.matWriter import MatCel, encodeMat
 from sith.material.matExporter import prepareMatExports, publishExportFiles
 from sith.types import Flag, Vector3f
+from sith.audit.pose import PoseLayer, poseModel, rotationMatrix
 '''
         # Blender's embedded Python executable is blender.exe, not a Python CLI.
         if 'bpy' in sys.modules:
