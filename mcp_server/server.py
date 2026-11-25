@@ -20,7 +20,7 @@ from typing import Any
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 MAX_INPUT = 64 * 1024 * 1024
 MAX_LOG = 1024 * 1024
 MAX_REPORT = 256 * 1024

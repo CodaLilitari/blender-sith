@@ -94,8 +94,7 @@ model. The [audit index](audits/README.md) lists every status.
 
 In the Blender 3DO export dialog the export options are **Detail Levels**, **Fail Over Retail
 Limits**, **8-bit and 16-bit Editions**, **Dither Indexed Textures** and **Avoid Fullbright
-Colours** (see [USAGE](../USAGE.md#-exporting-3do-models)). They are in this source tree, not in
-the 1.2.0 release.
+Colours** (see [USAGE](../USAGE.md#-exporting-3do-models)). They ship in [Blender Sith (Coda) 1.3.0](release-1.3.0-coda.1.md).
 
 ## The stages
 

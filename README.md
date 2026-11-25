@@ -20,10 +20,7 @@ animations and MAT textures, and adds checks and tools for Jedi Knight: Dark For
 Mysteries of the Sith (MotS) player characters. Blender shows the extension as
 **Blender Sith (Coda)**. It has upstream's id, `sith`: install one or the other, not both.
 
-The latest release, [v1.2.0-coda.1](docs/platform-builds.md#latest-install-route), has upstream's
-features, native pivots, the binding audit and six of the MCP tools. The rest of the table below,
-export options included, is only in this source tree, which is not a release; its manifest still
-reads 1.2.0.
+[Blender Sith (Coda) 1.3.0](docs/platform-builds.md#latest-install-route) includes Red’s model and animation audits, editable viewport pivots and new texture and export controls. The optional MCP companion in the matching source exposes 13 tools. [Release notes](docs/release-1.3.0-coda.1.md)
 
 ## Why this fork exists
 
@@ -57,7 +54,7 @@ which this fork integrates; the formats, importers, exporters and editing tools 
 | KEY lint | Not included. KEY export checks the target's limits: for JKDF2 and MOTS, 64 joints, 8 markers and 31-character names. | `lintKeyHeader` (tracks past JOINTS, tracks numbered 64 and above, entry order, JOINTS below the model's node count, and the target's header limits with or without a model), `scanKeyPops` (pops at and between entries, such as Euler flips and jumps at an entry), `keyPriorityReport`, and `trackRegistry` (track slots that clash between characters in one pack). KEY export writes each converted rotation as the Euler triple nearest the previous one. |
 | Floor, slip and camera checks | Not included. | `auditFloorContact` against a floor you give it, such as the engine floor from `thingFloorHeight` (without one, the rest pose's lowest point); the slip of planted feet; and `auditCameraReading` for how long a mesh reads from the third-person camera. |
 | KEY reseat | Not included. | `sith.key.keyReseat` puts the joints that stock KEYs push off their seats back on them, changes no rotation, checks that nothing else moved, and writes only the KEYs that change. **Reseat KEYs** in Blender. |
-| MCP companion tools | Not included at `168dadc`. Proposed upstream as [PR #21](https://github.com/smlu/blender-sith/pull/21). | An optional local stdio server with 13 tools: six general ones (server information, inspection, the binding audit, geometry-only conversion, regression and packaging), which the 1.2.0 release has, then six audits and the reseat pass. |
+| MCP companion tools | Not included at `168dadc`. Proposed upstream as [PR #21](https://github.com/smlu/blender-sith/pull/21). | An optional local stdio server with 13 tools: six general ones (server information, inspection, the binding audit, geometry-only conversion, regression and packaging), plus six specialized audits and the reseat pass. |
 | Modeling-workflow guide | Not included. Upstream documents the formats and the Blender pipeline. | [Modeling workflow](docs/modeling-workflow.md): nine stages from references to a retail release, each with faults from real releases and the check that finds them. |
 | Agent guide | Not included. | [Agent guide](docs/agents.md): what an agent runs at each stage, the rules, how to read reports and how to report results. [Agent usage](docs/agent-use.md) has the exact commands. |
 
@@ -165,7 +162,7 @@ table above.
 4. **Import Animation**: `File > Import > Sith Game Engine Animation (.key)`
 5. **Edit Properties**: Use the 3DO Properties panels (see [Usage Guide](USAGE.md))
 6. **Export**: `File > Export` with the intended format and target. For JK/MotS, keep 3DO 2.1, choose the JKDF2 or MOTS KEY target, and write MATs as Indexed with the real CMP, or a separately tested encoding. In this source tree, set **Detail Levels** to 4 and use **8-bit and 16-bit Editions** to write both editions. Bake procedural shaders to images before MAT export.
-7. **Audit**: in this source tree, open the **Sith Audits** panel (3D View sidebar, tab **Sith**) or follow the [modeling workflow](docs/modeling-workflow.md).
+7. **Audit**: open the **Sith Audits** panel (3D View sidebar, tab **Sith**) or follow the [modeling workflow](docs/modeling-workflow.md).
 
 > 📖 **Detailed instructions**: See the [Usage Guide](USAGE.md) for complete documentation.
 
@@ -185,13 +182,9 @@ The audits also run without Blender, in Python 3.11+ with NumPy.
 
 ### Method 1: From Release (Recommended)
 
-The 1.2.0 release has upstream's features, native pivots, the binding audit and six of the MCP
-tools. It does not have the audits, the reseat pass, the Sith Audits panel, the MCP audit tools or
-the export changes: the retail budget at export, **Detail Levels**, **Fail Over Retail Limits**, MAT
-dithering, **Avoid Fullbright Colours**, the 8-bit and 16-bit editions and the nearest-Euler KEY
-export. For those, build from source (Method 2).
+The extension ZIP includes the Sith Audits panel, viewport pivot helpers and all 3DO, KEY and MAT export options. Install the optional [MCP companion](docs/MCP.md) from the same release tag.
 
-1. 📥 **Download** the chosen named extension ZIP from the [1.2.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.2.0-coda.1.md) and [package status](docs/platform-builds.md).
+1. 📥 **Download** the chosen named extension ZIP from the [1.3.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.3.0-coda.1), checking its hash. See the completed [release evidence](docs/release-1.3.0-coda.1.md) and [package status](docs/platform-builds.md).
 2. 🔧 **Open Blender** and go to `Edit > Preferences > Add-ons`
 3. 📂 **Install**: Click the dropdown menu (▼) at the top-right and select `Install from Disk...`
 4. 📁 **Select** the downloaded ZIP file
@@ -216,8 +209,7 @@ The shell wrapper `scripts/make_addon.sh` retains the fork's explicit
 including upstream's `--output ZIP`, go to **`make_addon.py`**. Both Python
 builders remain directly callable.
 
-A build of this source tree is a local candidate, not a validated release package. Its version
-reads 1.2.0, the same number as the release, until the next release changes it.
+To reproduce a published package, select its tagged source, platform manifest and matching receipt.
 
 Blender imports geoset 0 only. Export writes geoset 0, or with **Detail Levels** up to four
 identical copies of it; other geosets of a source model are not kept by the Blender round trip.
@@ -283,7 +275,7 @@ blender --background --factory-startup --python-exit-code 1 --python tests/run.p
 
 Both suites use standard-library `unittest` and synthetic fixtures. GitHub Actions
 configuration includes core jobs on Windows, macOS and Linux, and application
-tests in headless Blender on Linux. Completed runs are linked from the [release record](docs/release-1.2.0-coda.1.md). Also run the retained [bounded fork/package checks](docs/agent-use.md),
+tests in headless Blender on Linux. Completed runs are linked from the [release record](docs/release-1.3.0-coda.1.md). Also run the retained [bounded fork/package checks](docs/agent-use.md),
 binding exact source/ZIP hashes and measured runtimes. Use explicit runtime paths,
 isolated preferences and deadlines; keep environments/results outside Git trees.
 The MCP companion has its own unit tests and stdio checks; see [MCP verification](docs/MCP.md#verification).
@@ -291,7 +283,7 @@ See [tests/README.md](tests/README.md) for coverage, commands and interpolation 
 
 ## Links
 
-- 📦 [1.2.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.2.0-coda.1) - Validation scope is recorded in the platform guide
+- 📦 [1.3.0 release](https://github.com/CodaLilitari/blender-sith/releases/tag/v1.3.0-coda.1) - Validation scope is recorded in the platform guide
 - 🧰 [Upstream Blender-Sith](https://github.com/smlu/blender-sith) - The Sith Engine Toolkit for Blender by Crt Vavros (smlu)
 - 🐛 [Upstream Issue Tracker](https://github.com/smlu/blender-sith/issues) - Report bugs or request features
 - 🌐 [Blender.org](https://www.blender.org/) - Get Blender

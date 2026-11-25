@@ -6,9 +6,7 @@ stage, the rules to keep, how to read each report and how to report results. The
 runtimes and launchers are in [agent usage](agent-use.md). The MCP setup is in [MCP](MCP.md). The
 real faults behind each check are in the [modeling workflow](modeling-workflow.md).
 
-The audits, the reseat pass and the export options this guide uses (the retail budget, **Detail
-Levels**, dithering, **Avoid Fullbright Colours** and the two editions) are in this source tree,
-not in the 1.2.0 release. Use matching source.
+Blender Sith (Coda) 1.3.0 includes these audits, the reseat pass and the export options used here. Use the [matching tagged source](https://github.com/CodaLilitari/blender-sith/tree/v1.3.0-coda.1) for the optional MCP companion.
 
 ## Rules
 

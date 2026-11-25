@@ -1,6 +1,6 @@
 # Background use and validation
 
-This guide covers Blender Sith (Coda) 1.2.0, including upstream `168dadc` and editable native pivots, and the model and KEY audits that this source tree adds after 1.2.0. Use the matching tagged source for the 1.2.0 MCP tools and command-line launchers, and this source for the audits, the KEY reseat pass and the MCP audit tools. See the [release record](release-1.2.0-coda.1.md) and [fork provenance](../FORK.md). For what to run at each stage of a character build and how to report it, read the [agent guide](agents.md) first.
+Use the tagged source for Blender Sith (Coda) 1.3.0 to run the launchers and optional MCP companion against the matching extension. The [release record](release-1.3.0-coda.1.md) lists the new audits and export tools. Start with the [agent guide](agents.md) for the stage of the character build you are working on.
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
@@ -8,7 +8,7 @@ Use a disposable background process, isolated Blender preferences, two threads b
 
 ## Check a replacement model against an animation
 
-With matching 1.2.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint). With this source, `lint_keys` with `model_path` runs the same binding check on every KEY of a folder, and `audit_budget` counts a 3DO against the retail limits.
+With matching 1.3.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint). With this source, `lint_keys` with `model_path` runs the same binding check on every KEY of a folder, and `audit_budget` counts a 3DO against the retail limits.
 
 ## Author or bake a native pivot
 

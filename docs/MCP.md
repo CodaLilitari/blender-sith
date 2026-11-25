@@ -2,7 +2,7 @@
 
 This optional local stdio server gives an MCP-capable agent 13 structured tools: six general tools (server information, inspection, the KEY binding audit, conversion, regression and packaging), six model and KEY [audit tools](#audit-tools) and the KEY reseat pass. It uses the official Python MCP SDK and runs each job as a fresh process in the configured runtime: background Blender, or Python with `bpy`. Installing the ordinary Blender extension does not start a server, open a port, or add dependencies to Blender.
 
-The audit tools and `reseat_keys` are in this source tree, not in the 1.2.0 release. Configure the `addon` setting with matching source.
+The 1.3.0 companion includes the audit tools and `reseat_keys`. Point the `addon` setting at the matching 1.3.0 extension or source as described below.
 
 For general scene interaction, use this format-specific companion alongside the [official Blender Lab MCP server](https://www.blender.org/lab/mcp-server/). Keep the two servers in separate external virtual environments: the audited official server uses the MCP SDK 1.x line while this companion pins SDK 2.3.0. This companion does not duplicate a general Python execution or interactive-scene tool. See [Blender alignment](blender-alignment.md) for the integration boundary. Publishing both configurations is not evidence of a tested joint session, native installation, or official Blender endorsement.
 
