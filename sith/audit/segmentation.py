@@ -56,7 +56,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..model.model3doEdit import componentLabels, weldPositions
-from .pose import (Pose, PoseLayer, blendLocalPose, jointFrames, keyFrameTimes, keyTrack, meshFrames,
+from .pose import (Pose, PoseLayer, blendLocalPose, cutReferenceDiagnostic, jointFrames, keyFrameTimes, keyTrack, meshFrames,
                    poseModel, posedMeshVertices, sampleTrack)
 
 __all__ = [
@@ -558,6 +558,7 @@ def auditSegmentation(model, *, geoset: int = 0, joints=None, reference=None, po
     report = {
         'status': status, 'geoset': geoset,
         'reference': 'rest' if reference is None else 'given',
+        'reference_diagnostic': cutReferenceDiagnostic(model, reference, frames),
         'parameters': {'margin': margin, 'leverHigh': leverHigh, 'leverReview': leverReview,
                        'facingMax': facingMax, 'islandShare': islandShare, 'minFaces': minFaces,
                        'separationHigh': separationHigh, 'weld': weld, 'detail': detail},

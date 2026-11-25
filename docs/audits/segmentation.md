@@ -45,6 +45,8 @@ geometry. `partBones(model)` returns them.
 
 ### The reference pose
 
+The report includes `reference_diagnostic`. `frames_different_from_rest` counts world joint frames that differ from stored rest (absolute matrix-entry tolerance `1e-9`). A parent moving can change several descendant frames. `rotated_rest_nodes` counts stored local rotations whose matrices differ from identity at the same tolerance. For a KEY supplied through `referencePose`, `key_driven_nodes` counts nodes with an applicable track, including tracks that hold the rest transform. A zero count flags a KEY that contributes nothing. Other pose inputs leave the track count unset. Confirm the original cut pose before interpreting the findings.
+
 Ownership and enclosure only mean something in the pose the pieces were cut in. The default is the
 rest pose stored in the 3DO. That is right for Mandalorian Red. Darth Lilitari, Lilivane and Biddy
 Blas were cut with Kyle's joints at zero rotation; pass

@@ -463,8 +463,8 @@ Text `<3DO file> - <check>`: a summary, then the complete report.
 | **Crouch KEYs** | `kycrchgn.key, kycrchbk.key` | Shown for **Floor Contact**: KEYs that play on the crouch floor. Names not in the run are ignored. |
 | **Lint Target** | JKDF2 | Shown for **KEY Lint**: the game whose KEY limits apply. |
 
-> ⚠️ The reference pose decides the joint-gap counts, and a wrong one gives no
-> warning. A character cut with straight joints at a stand KEY's seats needs
+> ⚠️ The gap report gives the number of joint frames differing from rest and flags
+> a reference KEY that drives no model nodes. Check the cut pose against the source geometry. A character cut with straight joints at a stand KEY's seats needs
 > **Reference KEY** with the stand KEY it was cut against and **Zero Rotations**,
 > for example the stock `kystand1.key`.
 

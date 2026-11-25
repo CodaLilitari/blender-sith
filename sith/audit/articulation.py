@@ -49,7 +49,7 @@ from typing import Callable, Dict, Iterable, List, Mapping, Optional, Tuple
 import numpy as np
 
 from ..key.keyLoader import loadKey
-from .pose import (LocalPose, Pose, PoseLayer, blendLocalPose, jointFrames, keyFrameTimes, keyTrack,
+from .pose import (LocalPose, Pose, PoseLayer, blendLocalPose, cutReferenceDiagnostic, jointFrames, keyFrameTimes, keyTrack,
                    meshFrames, posedMeshVertices, poseModel, restPose, sampleTrack)
 
 __all__ = [
@@ -168,6 +168,7 @@ class Joint:
 class ReferencePose(Pose):
     """A ``Pose`` with a short description of how it was built, for reports."""
     description: str = 'rest pose'
+    keyDrivenNodes: Optional[int] = None
 
 
 def cameraDirection(azimuth: float, elevation: float) -> np.ndarray:
@@ -235,7 +236,7 @@ def referencePose(model, key=None, frame: float = 0.0, *, zeroRotations: bool = 
     rule = 'zero rotation' if zeroRotations else 'its rotations'
     description = f'{name} frame {float(frame):g}: KEY positions with {rule}; rest elsewhere'
     return ReferencePose(local, frames, meshFrames(model, frames),
-                         posedMeshVertices(model, frames, geoset), description)
+                         posedMeshVertices(model, frames, geoset), description, sum(bool(layers) for layers in drivenBy))
 
 
 # ----------------------------------------------------------------------------------- inputs
@@ -919,6 +920,7 @@ def auditArticulation(model, keys, *, step: float = 2.0, cameras=None, joints=No
                        'reference': getattr(reference, 'description', 'given pose'),
                        'worst': worst, 'settings': {k: (list(v) if isinstance(v, tuple) else v)
                                                     for k, v in asdict(settings).items()}},
+        'reference_diagnostic': cutReferenceDiagnostic(model, reference, reference.frames),
         'reading': READING_RULE,
     }
     return report

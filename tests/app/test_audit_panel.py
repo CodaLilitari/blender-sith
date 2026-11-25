@@ -357,7 +357,10 @@ class AuditPanelTests(SceneTestCase):
         self.assertEqual(lint['status'], 'review')   # synthetic track names differ from the model's
         message = self.reports[-1][1]
         self.assertTrue(message.startswith('Joint Gaps: review, Seat Offsets: off_seat, Floor Contact: '), message)
-        self.assertIn('Reference: rest pose', bpy.data.texts['boxes.3do - Joint Gaps'].as_string())
+        text = bpy.data.texts['boxes.3do - Joint Gaps'].as_string()
+        self.assertIn('Reference: rest pose', text)
+        self.assertIn('0 of 3 joint frames differ from rest', text)
+        self.assertIn(gaps['reference_diagnostic']['advice'], text)
 
     def test_audit_files_subset_and_reference_key(self):
         model, keys, _ = self.write_files()

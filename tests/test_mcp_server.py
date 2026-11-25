@@ -652,6 +652,8 @@ class AuditJobTests(unittest.TestCase):
         self.assertEqual(seats["status"], "off_seat")
         self.assertEqual([row["name"] for row in seats["keys_off_seat"]], ["lift.key"])
         self.assertAlmostEqual(seats["keys_off_seat"][0]["largest"]["offset"], 0.004, places=9)
+        self.assertEqual(gaps["reference_diagnostic"], full["articulation"]["reference_diagnostic"])
+        self.assertEqual(gaps["reference_diagnostic"]["key_driven_nodes"], 2)
         self.assertEqual(len(full["articulation"]["keys"]), 3)
 
     def test_articulation_key_subset_and_rows_are_bounded(self):
@@ -707,6 +709,7 @@ class AuditJobTests(unittest.TestCase):
         audit, _ = self.assertPassed(self.service.audit_segmentation(str(self.model)))
         self.assertIn(audit["segmentation"]["status"], {"clean", "review", "suspect"})
         self.assertEqual(audit["segmentation"]["reference"], "rest")
+        self.assertEqual(audit["segmentation"]["reference_diagnostic"]["frames_different_from_rest"], 0)
         result = self.service.audit_segmentation(str(self.model), reference_key=str(self.keys / "stand.key"),
                                                  zero_rotations=True, key_dir=str(self.keys), keys=["lift.key"], step=1.0)
         audit, _ = self.assertPassed(result)

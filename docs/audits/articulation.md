@@ -147,6 +147,8 @@ largest offset over all KEYs) and `keys` (each KEY's nodes off their seats).
 
 ## Choose the reference pose
 
+The report includes `reference_diagnostic`. `frames_different_from_rest` counts world joint frames that differ from stored rest (absolute matrix-entry tolerance `1e-9`). A parent moving can change several descendant frames. `rotated_rest_nodes` counts stored local rotations whose matrices differ from identity at the same tolerance. For a KEY supplied through `referencePose`, `key_driven_nodes` counts nodes with an applicable track, including tracks that hold the rest transform. A zero count flags a KEY that contributes nothing. Other pose inputs leave the track count unset. Confirm the original cut pose before interpreting the findings.
+
 The anchors measure movement away from the reference, so the reference must be the pose in which
 the seams close. A pose equal to the reference parts nothing. A reference that is itself open hides
 the opening.

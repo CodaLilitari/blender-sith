@@ -359,8 +359,8 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
   the same sample points ([articulation](audits/articulation.md)).
 - Through MCP: `audit_articulation`. In Blender: **Audit Files** with **Joint Gaps**. Both default
   to the rest pose. For a character cut at a stand KEY's seats, pass that KEY with zero rotations
-  (`reference_key` and `zero_rotations: true`, or **Reference KEY** with **Zero Rotations**). A
-  wrong reference gives no warning.
+  (`reference_key` and `zero_rotations: true`, or **Reference KEY** with **Zero Rotations**). The
+  diagnostic reports how many joint frames differ from rest. Verify the cut pose against its source.
 - Lids, fins and steps are surface standing outside the body, not daylight. Capture the worst poses
   of each joint from the side and from behind (stage 9), and the deep bends.
 

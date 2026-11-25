@@ -42,7 +42,7 @@ import numpy as np
 __all__ = [
     'PoseLayer', 'LocalPose', 'Pose', 'rotationMatrix', 'normalizeAngleAcute', 'keyTrack',
     'sampleTrack', 'blendLocalPose', 'jointFrames', 'meshFrames', 'posedMeshVertices',
-    'posedNodeVertices', 'poseModel', 'restPose', 'keyFrameTimes', 'nodeTypeValue',
+    'posedNodeVertices', 'poseModel', 'restPose', 'keyFrameTimes', 'nodeTypeValue', 'cutReferenceDiagnostic',
 ]
 
 
@@ -266,6 +266,28 @@ def jointFrames(model, local: LocalPose, preRotations: Optional[Mapping[int, Ite
     for i in range(count):
         build(i)
     return frames
+
+
+def cutReferenceDiagnostic(model, reference, frames) -> dict:
+    """Describe the chosen cut pose without inferring which pose the artist used."""
+    restLocal = blendLocalPose(model, ())
+    identity = np.eye(3)
+    rotated = sum(not np.allclose(rotationMatrix(pyr), identity, rtol=0, atol=1e-9) for pyr in restLocal.rotations)
+    rest = jointFrames(model, restLocal)
+    matches = np.isclose(frames, rest, rtol=0, atol=1e-9).all(axis=(1, 2))
+    changed = int(np.count_nonzero(~matches))
+    name = 'rest pose' if reference is None else getattr(reference, 'description', 'caller-supplied pose')
+    driven = getattr(reference, 'keyDrivenNodes', None)
+    advice = 'Compare this pose with the source used to cut the rigid pieces before interpreting the counts.'
+    if driven == 0:
+        advice = 'The reference KEY drives no nodes in this hierarchy. Check its JOINTS and track indices.'
+    elif changed == 0:
+        advice = (f'The selected frames match rest. Stored local rotations differ from identity on {rotated} of {len(matches)} nodes. '
+                  'If the pieces were cut in a KEY pose, '
+                  'check the original KEY, frame and rotation setting.')
+    return {'description': name, 'node_count': len(matches), 'rotated_rest_nodes': rotated,
+            'frames_different_from_rest': changed,
+            'key_driven_nodes': driven, 'advice': advice}
 
 
 def meshFrames(model, frames: np.ndarray) -> np.ndarray:

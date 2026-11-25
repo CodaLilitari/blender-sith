@@ -82,7 +82,7 @@ KEYs, step, `toEnd`, cameras and reference pose.
 ## The reference pose
 
 The joint-gap audit, the seat offsets and the cut lint measure from the pose in which the pieces
-were cut. A wrong reference gives plausible counts and no warning.
+were cut. The report compares the chosen joint frames with rest and flags a reference KEY that drives no model nodes. A plausible result can still come from the wrong cut pose.
 
 - The default is the rest pose stored in the 3DO. It suits a model authored in its rest pose, such
   as Mandalorian Red.

@@ -77,7 +77,7 @@ engine plays on to `FRAMES`. `step` must be a positive finite number of frames.
 ## Choose the reference pose
 
 The joint gaps, the seat offsets and the cut lint measure from the pose in which the pieces were
-cut. A wrong reference gives plausible counts and no warning, so state it in every report.
+cut. The report compares the chosen joint frames with rest and flags a reference KEY that drives no model nodes. A plausible result can still come from the wrong cut pose, so state it in every report.
 
 - **Rest pose** (the default): a model authored in its rest pose, such as Mandalorian Red.
 - **Stand KEY with zero rotations**: characters cut with every joint straight at a stand KEY's

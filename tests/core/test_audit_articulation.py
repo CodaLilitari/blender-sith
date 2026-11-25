@@ -290,6 +290,8 @@ class AuditTests(unittest.TestCase):
         bent = two_boxes(rotation=(40.0, 0.0, 0.0))
         straight = key({0: [entry(0)], 1: [entry(0)]}, frames=4, name='straight.key')
         fromRest = auditArticulation(bent, [straight])
+        self.assertEqual(fromRest['reference_diagnostic']['rotated_rest_nodes'], 1)
+        self.assertIn('on 1 of 2 nodes', fromRest['reference_diagnostic']['advice'])
         self.assertGreater(fromRest['joints'][0]['max_separation']['value'], 0.001)
         built = referencePose(bent, straight, 0, zeroRotations=True)
         fromCut = auditArticulation(bent, [straight], reference=built)
@@ -411,6 +413,36 @@ class AuditTests(unittest.TestCase):
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_cut_reference_diagnostic_measures_frames_without_guessing_the_cut_pose(self):
+        from sith.audit.segmentation import auditSegmentation
+        model = two_boxes()
+        motion = slide(0.003)
+        rest = auditSegmentation(model)['reference_diagnostic']
+        self.assertEqual((rest['node_count'], rest['frames_different_from_rest']), (2, 0))
+        self.assertIsNone(rest['key_driven_nodes'])
+        self.assertEqual(rest['rotated_rest_nodes'], 0)
+        # Full revolutions in the stored Euler fields still describe identity.
+        spun = auditSegmentation(two_boxes(rotation=(360, 0, 0)))['reference_diagnostic']
+        self.assertEqual(spun['rotated_rest_nodes'], 0)
+
+        # A KEY with no in-range tracks and a KEY that holds rest produce identical geometry.
+        # Only the first has failed to supply any input to the reference.
+        for refKey, count in ((key({2: [entry(0)]}, joints=3), 0), (key({0: [entry(0)]}), 1)):
+            ref = referencePose(model, refKey)
+            gaps = auditArticulation(model, [motion], reference=ref)['reference_diagnostic']
+            self.assertEqual(gaps, auditSegmentation(model, reference=ref)['reference_diagnostic'])
+            self.assertEqual(gaps['frames_different_from_rest'], 0)
+            self.assertEqual(gaps['key_driven_nodes'], count)
+            self.assertEqual('drives no nodes' in gaps['advice'], count == 0)
+
+        # A single driven root moves both frames. A raw frame array has no track provenance.
+        ref = referencePose(model, key({0: [entry(0, (0.02, 0, 0))]}))
+        keyed = auditSegmentation(model, reference=ref)['reference_diagnostic']
+        raw = auditSegmentation(model, reference=ref.frames)['reference_diagnostic']
+        self.assertEqual((keyed['key_driven_nodes'], keyed['frames_different_from_rest']), (1, 2))
+        self.assertIsNone(raw['key_driven_nodes'])
+        self.assertEqual(raw['frames_different_from_rest'], 2)
+
     def test_reference_pose_takes_key_seats_and_optionally_zero_rotation(self):
         m = two_boxes(rotation=(40.0, 0.0, 0.0))
         stand = key({1: [entry(0, (0, 0.002, 0), (10, 20, 30))]}, name='stand.key')

@@ -222,7 +222,7 @@ def audit_segmentation(request, progress):
     report = segmentation.auditSegmentation(model, geoset=parameters["geoset"],
                                             reference=None if parameters["reference"]["pose"] == "rest" else reference,
                                             poses=poses, detail=parameters["detail"])
-    summary = pick(report, ("status", "geoset", "reference", "parameters", "issue_counts", "severity_counts",
+    summary = pick(report, ("status", "geoset", "reference", "reference_diagnostic", "parameters", "issue_counts", "severity_counts",
                             "findings_truncated", "poses"))
     summary["findings"] = []
     for finding in report["findings"]:
@@ -271,7 +271,7 @@ def audit_articulation(request, progress):
                                             settings=settings, geoset=parameters["geoset"], onPose=onPose)
     full = {"articulation": report}
     summary = pick(report, ("status", "issue_counts", "findings", "findings_truncated", "totals", "geometry",
-                            "parameters", "reading"))
+                            "parameters", "reading", "reference_diagnostic"))
     cut(summary, "joints", report["joints"])
     daylight = sorted((row for row in report["keys"] if row["poses_with_daylight"]),
                       key=lambda row: (-row["lines"], row["name"].casefold(), row["name"]))

@@ -1543,7 +1543,10 @@ class AuditFiles(bpy.types.Operator, ImportHelper):
                 report = articulation.auditArticulation(model, keys, step=self.step, reference=reference, onPose=onPose)
             finally:
                 wm.progress_end()
-            lines = [f"Status: {report['status']}", f"Totals: {report['totals']}", '']
+            diagnostic = report['reference_diagnostic']
+            lines = [f"Status: {report['status']}", f"Totals: {report['totals']}",
+                     f"Reference: {diagnostic['frames_different_from_rest']} of {diagnostic['node_count']} "
+                     "joint frames differ from rest.", diagnostic['advice'], '']
             for f in report['findings']:
                 if f['code'] == 'daylight':
                     lines.append(f"{f['joint']}: {f['key']} frame {f['frame']:g}, {f['lines']} lines, "
