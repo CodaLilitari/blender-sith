@@ -63,8 +63,8 @@ Limits:
 - A KEY played alone is sampled up to `FRAMES - 1` by default. The engine also plays the last interval, up to `FRAMES`; `toEnd=True` samples it, from Python only.
 - `removeFaces` caps each opening on its own. Where one removal leaves two rims on a flat patch, or an opening touches itself at a point, a cap can lie over kept faces.
 - Thresholds are JK units chosen for Kyle-sized characters from a few released characters. A count is a lead, not a verdict.
-- The joint-gap audit, the seat offsets and the cut lint need the pose the pieces were cut in. A wrong reference pose gives no warning.
-- Dithered MATs, MATs written with **Avoid Fullbright Colours**, the two editions and four-geoset exports written by the add-on have not been run in OpenJKDF2 or retail JK.EXE. The fullbright glow and the 16-bit edition's opaque cut-outs are inferred from the CMP's light table and the renderer source, not seen in the game. The MCP audit worker has run through the Python+`bpy` route on Linux, not through a Blender executable, Windows or macOS.
+- The joint-gap audit, the seat offsets and the cut lint need the pose the pieces were cut in. Their reports count the direct KEY tracks and the joint frames that move. Missing tracks or a rotated rest pose prompt review. Only the artist can identify the original cut pose.
+- Dithered MATs, MATs written with **Avoid Fullbright Colours**, the two editions and four-geoset exports written by the add-on have not been run in OpenJKDF2 or retail JK.EXE. The fullbright glow and the 16-bit edition's opaque cut-outs are inferred from the CMP's light table and the renderer source, not seen in the game. The MCP audit worker has been exercised through Python and `bpy` on Windows and Linux. See the release validation notes for the runtime used by each check.
 - The tests build synthetic models and KEYs. No game data or character file is in the repository.
 
 ## Validation status and historical evidence
