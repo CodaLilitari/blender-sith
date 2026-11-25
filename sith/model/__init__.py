@@ -24,7 +24,9 @@ from .model3do import (
     Mesh3doNodeType,
     Model3do,
     Model3doGeoSet,
-    TextureMode
+    TextureMode,
+    kMaxDetailLevels,
+    setDetailLevels
 )
 
 def __getattr__(name):
@@ -49,5 +51,7 @@ __all__ = [
     "Mesh3doNodeType",
     "Model3do",
     "Model3doGeoSet",
-    "TextureMode"
+    "TextureMode",
+    "kMaxDetailLevels",
+    "setDetailLevels"
 ]

@@ -28,6 +28,14 @@ from sith.material.mat import _read_header, _read_mipmap
 from sith.material.matWriter import MatCel, encodeMat
 from sith.material.matExporter import prepareMatExports, publishExportFiles
 from sith.types import Flag, Vector3f
+from sith.audit.pose import PoseLayer, poseModel, rotationMatrix
+from sith.audit.budget import auditBudget, budgetWarnings
+from sith.audit.segmentation import auditSegmentation, pieceColours
+from sith.audit.ground import auditCameraReading, auditFloorContact, CarriedMesh
+from sith.audit.articulation import auditArticulation, referencePose, seatOffsets
+from sith.audit.keylint import lintKeyHeader, scanKeyPops, keyPriorityReport, trackRegistry
+from sith.key.keyEuler import eulerTwin, nearestEuler, unwrapEuler
+from sith.key.keyReseat import checkReseat, reseatKey, reseatKeyFiles
 '''
         # Blender's embedded Python executable is blender.exe, not a Python CLI.
         if 'bpy' in sys.modules:

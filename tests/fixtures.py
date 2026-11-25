@@ -40,7 +40,9 @@ def mat_bytes(color_format=RGBA32, cels=None, color_indices=None):
     return data
 
 
-def cmp_bytes(version=0x1e, alpha=False):
+def cmp_bytes(version=0x1e, alpha=False, light=None):
     # Index i has a deliberately asymmetric color, including both endpoints.
     palette = bytes(channel for i in range(256) for channel in (i, 255 - i, i // 2))
-    return struct.pack('<4sii52s', b'CMP ', version, alpha, b'\0' * 52) + palette
+    # light: rows of palette indices (64 x 256 for a whole light table), appended after the palette.
+    table = bytes(index for row in light for index in row) if light is not None else b''
+    return struct.pack('<4sii52s', b'CMP ', version, alpha, b'\0' * 52) + palette + table

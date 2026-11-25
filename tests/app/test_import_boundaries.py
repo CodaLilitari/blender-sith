@@ -46,10 +46,12 @@ class ImportBoundaryTests(SceneTestCase):
         with (patch.object(importer, "getCmpFileOrDefault", side_effect=AssertionError("palette lookup")),
               patch.object(importer, "getDefaultMatFolders", side_effect=AssertionError("material search")),
               patch.object(importer, "importMaterials", side_effect=AssertionError("material load"))):
-            model = import3do(TV / "model/legacy_pixels.3do", clearScene=False, loadExternalMaterials=False,
-                              uvAbsolute_2_1=False)
-        self.assertIsNotNone(model)
-        self.assertTrue(any(child.type == "MESH" for child in model.children_recursive))
+            for helpers in (False, True):
+                with self.subTest(importPivotHelpers=helpers):
+                    model = import3do(TV / "model/legacy_pixels.3do", clearScene=False, loadExternalMaterials=False,
+                                      uvAbsolute_2_1=False, importPivotHelpers=helpers)
+                    mesh, = (child for child in model.children_recursive if child.type == "MESH")
+                    self.assertEqual(importer.getPivotHelperObj(mesh) is not None, helpers)
 
     def joint(self, name, index, parent=None):
         mesh = bpy.data.meshes.new(name)
