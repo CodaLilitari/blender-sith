@@ -6,6 +6,46 @@ from .keyValidation import kKeyTargetLimits, validateKeyForTarget, validateKeyNu
 DETAIL_LIMIT = 32
 
 
+def keyTargetFindings(key, key_target="JKDF2"):
+    """The checks of ``auditModelKey`` that need no model, as ``(level, code, details)`` triples.
+
+    Level 2 is incompatible, level 1 review:
+
+    - ``non_text_key``: JKDF2 and MOTS read text KEYs only.
+    - ``invalid_key_number``: a number that is not a finite float32.
+    - ``key_target_limit``: more JOINTS, markers or name characters than the target allows
+      (``validateKeyForTarget``), or a source that declares more markers than that.
+      ``rdKeyframe_LoadEntry`` fails the whole load above 8 markers.
+    - ``unrecognized_markers`` (review): marker types the loader dropped.
+    - ``invalid_playback_header``: FRAMES below 1 or FPS not above 0. ``rdPuppet_AdvanceTrack``
+      divides by FRAMES while a KEY loops.
+
+    ``sith.audit.keylint.lintKeyHeader`` runs these when it has no model.
+    """
+    if key_target not in {"JKDF2", "MOTS"}:
+        raise ValueError("Choose JKDF2 or MOTS for the KEY target checks")
+    out = []
+    if key.fileFormat.value != "text":
+        out.append((2, "non_text_key", {}))
+    for validator, args, code in ((validateKeyNumericData, (key,), "invalid_key_number"),
+                                  (validateKeyForTarget, (key, key_target), "key_target_limit")):
+        try:
+            validator(*args)
+        except (AssertionError, ValueError) as exc:
+            out.append((2, code, {"detail": str(exc)[:256]}))
+    # The loader deliberately omits unknown marker types. Its retained list
+    # alone cannot establish the declared source's fixed engine-buffer bound.
+    marker_limit = kKeyTargetLimits[key_target][1]
+    if (key.sourceMarkerCount is not None and key.sourceMarkerCount > marker_limit
+            and len(key.markers) <= marker_limit):
+        out.append((2, "key_target_limit", {"detail": f"{key_target} supports at most {marker_limit} KEY markers; source declares {key.sourceMarkerCount}"}))
+    if key.sourceSkippedMarkers:
+        out.append((1, "unrecognized_markers", {"count": key.sourceSkippedMarkers}))
+    if key.numFrames < 1 or key.fps <= 0:
+        out.append((2, "invalid_playback_header", {"detail": "KEY frame count and FPS must be positive"}))
+    return out
+
+
 def auditModelKey(model, key, key_target="JKDF2"):
     """Compare parsed slots, basic track integrity and native KEY target limits.
 
@@ -31,24 +71,8 @@ def auditModelKey(model, key, key_target="JKDF2"):
         if len(report["findings"]) < DETAIL_LIMIT:
             report["findings"].append({"code": code, **details})
 
-    if key.fileFormat.value != "text":
-        finding(2, "non_text_key")
-    for validator, args, code in ((validateKeyNumericData, (key,), "invalid_key_number"),
-                                  (validateKeyForTarget, (key, key_target), "key_target_limit")):
-        try:
-            validator(*args)
-        except (AssertionError, ValueError) as exc:
-            finding(2, code, detail=str(exc)[:256])
-    # The loader deliberately omits unknown marker types. Its retained list
-    # alone cannot establish the declared source's fixed engine-buffer bound.
-    marker_limit = kKeyTargetLimits[key_target][1]
-    if (key.sourceMarkerCount is not None and key.sourceMarkerCount > marker_limit
-            and len(key.markers) <= marker_limit):
-        finding(2, "key_target_limit", detail=f"{key_target} supports at most {marker_limit} KEY markers; source declares {key.sourceMarkerCount}")
-    if key.sourceSkippedMarkers:
-        finding(1, "unrecognized_markers", count=key.sourceSkippedMarkers)
-    if key.numFrames < 1 or key.fps <= 0:
-        finding(2, "invalid_playback_header", detail="KEY frame count and FPS must be positive")
+    for level, code, details in keyTargetFindings(key, key_target):
+        finding(level, code, **details)
 
     if key.numJoints != len(model.meshHierarchy):
         finding(1, "declared_joint_count_differs")

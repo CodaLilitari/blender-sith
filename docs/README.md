@@ -15,9 +15,11 @@ behind those options and the transformations performed by the add-on.
                     Resource data objects
                   Model3do / Key / material
                               |
-                      Blender adapters
-                              |
-              Objects, meshes, images, actions
+               +--------------+---------------+
+               |                              |
+       Blender adapters              Audits and KEY reseat
+               |                         (no Blender)
+ Objects, meshes, images, actions      Plain-data reports
 ```
 
 | Question | Read |
@@ -29,6 +31,9 @@ behind those options and the transformations performed by the add-on.
 | How do scene objects become joints, and what does sync reorder? | [Blender pipeline](blender-pipeline.md) |
 | Why does import/export require baking or reject an animation? | [Compatibility notes](blender-compatibility.md) |
 | How do I check a 3DO against a KEY before importing? | [Native binding audit and worked example](MCP.md#will-this-key-animate-the-intended-joint) |
+| How do I take a character from references to a retail release? | [Modeling workflow](modeling-workflow.md) |
+| Which audit finds which fault, and what do its statuses mean? | [Audit reference](audits/README.md) |
+| How should an AI agent work with the fork? | [Agent guide](agents.md), then [agent and CLI usage](agent-use.md) and the [MCP companion](MCP.md) |
 | How do I run the model tests or build the fork? | [Agent and CLI usage](agent-use.md) and [package build instructions](building.md) |
 | How is compatibility checked? | [Tests](../tests/README.md) and [asset verification](../tests/batch/README.md) |
 
@@ -60,7 +65,8 @@ original file -> decoded resource -> same-format codec write
 
 A codec can preserve opaque fields and original numeric values without Blender
 being able to represent them all. Blender round trips rebuild geometry and
-animation. Blender edits LOD 0. The importer keeps the native pivot alongside
+animation. Blender edits LOD 0; export can write up to four copies of it (**Detail Levels**).
+The importer keeps the native pivot alongside
 editable geometry, and export preserves that offset by default or bakes it on request.
 Face normals follow geometry and animation curves are sampled.
 Byte identity and equivalent visible poses are therefore
@@ -92,6 +98,7 @@ is cached, a fresh process is needed when checking a changed release manifest.
 | Blender app tests | Scene conversion, selection, editable data and sampled poses | Native renderer, event handling or playback blending |
 | Asset batch checks | The explicitly tested corpus, options and reported exceptions | Untested assets, game revisions or skipped/rejected inputs |
 | Engine source inspection | Behavior of the particular inspected implementation/path | Execution of a retail game or equivalence across engines |
+| Native audits | Geometric checks of native files against engine rules taken from OpenJKDF2 | How the game draws, times or blends the poses; acceptance in the game |
 
 The [format index](formats/README.md) separates game-family choices from format
 support. Tests named in these guides are regression coverage, not a claim that

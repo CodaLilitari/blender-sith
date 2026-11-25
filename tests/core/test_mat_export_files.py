@@ -69,6 +69,29 @@ class MatExportFileTests(unittest.TestCase):
         for path in (first, second, model):
             self.assertEqual(path.read_bytes(), b'original-' + path.name.encode())
 
+    def test_two_spellings_of_one_destination_are_refused_before_any_write(self):
+        # Both MAT editions use the same names. A second path to the same folder (here a link;
+        # a bind mount or another case on a case-insensitive volume behaves the same) would let
+        # the second edition be kept as "created during export" or replace the first.
+        eight = self.folder / 'mat8'
+        eight.mkdir()
+        alias = self.folder / 'alias'
+        try:
+            alias.symlink_to(eight, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest('this file system cannot hold a directory link')
+        cases = ([(eight / 'a.mat', self.prepared('eight', b'8-bit'), False),
+                  (alias / 'a.mat', self.prepared('sixteen', b'16-bit'), False)],
+                 [(eight / 'a.mat', self.prepared('lower', b'lower'), True),
+                  (eight / 'A.MAT', self.prepared('upper', b'upper'), True)])
+        for files in cases:
+            files.append((self.folder / 'new' / 'model.3do', self.prepared('model'), True))
+            with self.subTest(second=str(files[1][0])):
+                with self.assertRaisesRegex(ValueError, 'are one file'):
+                    publishExportFiles(files, self.staging)
+                self.assertEqual(list(eight.iterdir()), [])
+                self.assertFalse((self.folder / 'new').exists())
+
     def test_failed_new_file_write_removes_partial_files_and_new_directory(self):
         target = self.folder / 'mat/a.mat'
         with patch('sith.material.matExporter.shutil.copyfileobj', side_effect=OSError('disk full')):

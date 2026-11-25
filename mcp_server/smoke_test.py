@@ -21,10 +21,13 @@ async def check(config, source, evidence_file):
     async with Client(server) as client:
         response = await client.list_tools()
         evidence["tools"] = [tool.name for tool in response.tools]
-        expected = {"server_info", "inspect_3do", "audit_model_key", "convert_3do_to_blend", "run_regression", "build_extension"}
+        expected = {"server_info", "inspect_3do", "audit_model_key", "convert_3do_to_blend", "run_regression", "build_extension",
+                    "audit_budget", "audit_segmentation", "audit_articulation", "audit_ground", "lint_keys", "audit_track_slots",
+                    "reseat_keys"}
         if set(evidence["tools"]) != expected:
             raise RuntimeError("Unexpected tool catalog")
-        for name, arguments in (("server_info", {}), ("inspect_3do", {"path": str(source)}),
+        # audit_smoke.py exercises the KEY audits and reseat_keys; audit_budget needs only this 3DO.
+        for name, arguments in (("server_info", {}), ("inspect_3do", {"path": str(source)}), ("audit_budget", {"path": str(source)}),
                                 ("convert_3do_to_blend", {"path": str(source)}), ("run_regression", {}), ("build_extension", {})):
             result = await client.call_tool(name, arguments)
             data = result.structured_content

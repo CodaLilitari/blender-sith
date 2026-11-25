@@ -20,6 +20,7 @@ from . import keyWriter
 from bisect import bisect_left
 from .keyUtils import getActionFCurves, getSceneFrameRate, getSceneKeyFlags, hasActiveNlaStrips, markerTimeAndType, unchangedImportedJump, validateConstraintAnimation, validateKeyActionState, kKeyBinaryData
 from .keyBinary import prepareGrimExport
+from .keyEuler import nearestEuler
 import json
 from .keyValidation import validateKeyForTarget
 
@@ -362,6 +363,11 @@ def _sample_key_node(hnode, root, end_frame, *, start_frame=0, allowLateStart=Fa
         # Invert the importer's active-pivot translation before applying scale.
         entry.position = Vector3f(*vectorMultiply(mathutils.Vector(location) - pivot, scale))
         entry.orientation = eulerToPYR(euler)
+        if reference is not None and not native_euler:
+            # Blender's compatible Euler can still return the other form or an extra turn near
+            # pitch +-90. The engine moves each component linearly between entries, and partial
+            # weights scale each component, so keep the triple nearest the previous sample.
+            entry.orientation = Vector3f(*nearestEuler(reference, entry.orientation))
         validateFloat32((*entry.position, *entry.orientation), 'Generated KEY transform')
         entry._sourceRotation = rotation
         return entry
@@ -497,7 +503,7 @@ def _make_key_from_obj(key_name: str, obj: bpy.types.Object, scene: bpy.types.Sc
     # Its procedural/animated motion must be baked onto joints before export.
     validateKeyActionState(obj)
     validateConstraintAnimation(obj)
-    if obj.type == 'EMPTY' and obj.children:
+    if obj.type == 'EMPTY' and jointChildren(obj):
         transform_paths = ('location', 'rotation_euler', 'rotation_quaternion', 'rotation_axis_angle')
         if any(curve.is_valid and not curve.mute and curve.data_path in transform_paths
                for curve in getActionFCurves(obj)):
