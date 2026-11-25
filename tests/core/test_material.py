@@ -62,6 +62,22 @@ class ColorMapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(ImportError):
             ColorMap.load(Path(directory) / 'missing.cmp')
 
+    def test_jkdf2_light_table_follows_the_palette(self):
+        # Row `level` maps index i to (i + level) % 256: no index is drawn the same at every level.
+        light = [[(i + level) % 256 for i in range(256)] for level in range(64)]
+        loaded = self.load(cmp_bytes(0x1e, True, light) + b'\x07' * 0x10000)  # then a transparency table
+        self.assertEqual(loaded.lightLevels.shape, (64, 256))
+        self.assertEqual(loaded.lightLevels.dtype, np.uint8)
+        self.assertEqual(loaded.lightLevels.tolist(), light)
+        self.assertEqual(loaded.palette[255], (255, 0, 127))
+        # No table, a partial one, or a Grim Fandango file: the palette alone.
+        for data in (cmp_bytes(), cmp_bytes(light=light)[:64 + 768 + 0x3fff], cmp_bytes(0x14, light=light)):
+            with self.subTest(size=len(data), version=data[4]):
+                loaded = self.load(data)
+                self.assertIsNone(loaded.lightLevels)
+                self.assertEqual(len(loaded.palette), 256)
+        self.assertIsNone(ColorMap().lightLevels)
+
 
 class MatCodecTests(unittest.TestCase):
     def palette(self):

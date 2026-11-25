@@ -17,13 +17,15 @@
 import numpy as np
 from pathlib import Path
 from struct import Struct
-from typing import NamedTuple, List, Union
+from typing import NamedTuple, List, Optional, Union
 
 file_magic         = b'CMP '
 supported_versions = [
     0x14, # Grim Fandango
     0x1E  # Star Wars JKDF2, MOTS, DroidWorks
 ]
+
+kCmpLightLevels = 64  # Rows of the light table that follows a JKDF2/MOTS palette.
 
 class CmpHeader(NamedTuple):
     format = Struct('<4sii52s')
@@ -39,12 +41,22 @@ class CmpPaletteRGB(NamedTuple):
 
 class ColorMap:
     palette: List[CmpPaletteRGB]
+    # (64, 256) uint8 light table, or None: row ``level`` holds the palette index drawn for each
+    # index at that light level, row 63 at full light.
+    lightLevels: Optional[np.ndarray] = None
 
     @classmethod
     def load(cls, filePath: Union[Path, str]) -> 'ColorMap':
         """
-        Loads palette from cmp file.
+        Loads palette from cmp file, and the light table of a JKDF2/MOTS file.
         :`filePath`: Path to the cmp file.
+
+        In JKDF2 and MOTS files (version 0x1E) the 64 x 256 light table follows the palette:
+        ``rdColormap_LoadEntry`` (Engine/rdColormap.c in OpenJKDF2) reads it after the 768
+        palette bytes, and the software rasterizers draw each texel's index through the row of
+        its light level (Raster/rdZRaster.c). ``lightLevels`` keeps it. It is None for Grim
+        Fandango files, whose layout after the palette is not sourced here, and for a file that
+        ends before the table is complete; the palette still loads.
         """
         if isinstance(filePath, str):
             filePath = Path(filePath)
@@ -68,4 +80,9 @@ class ColorMap:
                 raise ImportError('Truncated CMP palette')
             cmp = cls()
             cmp.palette = [CmpPaletteRGB(*e) for e in np.frombuffer(pal, dtype=np.uint8).reshape(-1,3)]
+            cmp.lightLevels = None
+            if h.version == 0x1E:
+                table = f.read(kCmpLightLevels * 256)
+                if len(table) == kCmpLightLevels * 256:
+                    cmp.lightLevels = np.frombuffer(table, dtype=np.uint8).reshape(kCmpLightLevels, 256).copy()
             return cmp

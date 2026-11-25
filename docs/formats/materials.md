@@ -254,7 +254,8 @@ from that value. The reader consumes the following prefix:
 | 8 | i32 | Has-alpha-table indicator |
 | 12 | 52 bytes | Opaque header data |
 | 64 | 256 RGB byte triples | Palette, 768 bytes |
-| 832 | Remaining bytes | Additional tables, not decoded by this importer |
+| 832 | 64 x 256 bytes | Light table of a version 0x1E file: row `level` holds the index drawn for each index at that light level, row 63 at full light |
+| 17216 | Remaining bytes | Additional tables, not read |
 
 ```text
 CMP file
@@ -266,9 +267,13 @@ CMP file
                +-- index 255: R G B
 ```
 
-Only the RGB palette is used. The alpha-table indicator does not turn every
+The importer uses only the RGB palette. The alpha-table indicator does not turn every
 palette entry into a serialized RGBA quadruple; MAT cel transparency is handled
-as described above. Header or palette truncation is rejected.
+as described above. Header or palette truncation is rejected. The reader also
+keeps the light table of a version 0x1E (JKDF2/MOTS) file as `lightLevels`; the
+MAT encoder uses it to find the entries the CMP never darkens (fullbright). A
+file that ends before the table is complete, and a version 0x14 file, load
+without it.
 
 A model does not name its CMP. Select the palette from the game's scene/costume
 context, or supply a known palette explicitly. Named defaults `dflt.cmp` and
@@ -340,7 +345,11 @@ Indexed encoding requires a supplied CMP. RGB first rounds to bytes; squared RGB
 distance selects the nearest palette entry. Equal distances choose the lowest
 index. If a cel has alpha below 0.5, index zero is reserved for transparent pixels
 and excluded from every opaque-pixel search. Fractional alpha is not representable.
-There is no palette generation, color-profile transform or dithering.
+There is no palette generation or color-profile transform. Ordered dithering is
+optional and off by default; see [Indexed MAT dithering](../audits/materials.md).
+A dithering pattern never adds a fullbright entry that nearest color would not
+use, and the optional **Avoid Fullbright Colours** keeps fullbright entries out of
+Indexed output; see [fullbright entries](../audits/materials.md#fullbright-entries).
 
 Standard Sith mipmaps use area averages with premultiplied alpha for alpha-bearing
 formats, then unpremultiply before encoding. Odd-sized edges are included; each
@@ -364,7 +373,9 @@ concurrent path changes. Existing files skipped without overwrite
 are not decoded or checked for compatible dimensions, cels, encoding or palette.
 Keeping a file therefore does not establish that it matches the exported model.
 
-Replacement and backup renames stay on the destination volume, even when a custom
+Two prepared files whose destinations are one file, through another spelling of
+the same folder or a name that differs only in case, are refused before the first
+is written. Replacement and backup renames stay on the destination volume, even when a custom
 MAT folder is on another drive. Prepared model/texture files are published
 sequentially with rollback backups, not as one atomic bundle. Ordinary caught
 failures attempt to restore earlier replacements; a failed restore preserves the

@@ -15,7 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from enum import IntEnum, unique
+import copy
 import math
+import operator
 from collections import defaultdict
 from ..types import (
     Flag,
@@ -575,3 +577,29 @@ class Model3do:
                 nodes[current].siblingIdx = following
 
         self.meshHierarchy = nodes
+
+
+kMaxDetailLevels = 4  # JKDF2/MOTS rdModel3 stores four geosets: rdGeoset aGeos[4]
+
+
+def setDetailLevels(model: Model3do, count: int) -> Model3do:
+    """Make ``count`` geosets that are independent copies of geoset 0, and return the model.
+
+    JKDF2 and MOTS choose a geoset by camera distance: ``sithRender_RenderThings`` switches on
+    the model's geoset count and the level's LOD distances. Identical copies therefore show
+    full detail at every distance. Existing geosets after 0 are replaced. Radius, insert
+    offset, materials and the hierarchy are not changed: every copy has the same meshes in the
+    same order, so node mesh indices stay valid. ``count`` must be 1 to 4; the engine loader
+    does not check this bound and a fifth geoset overwrites the rest of the model record.
+    """
+    try:
+        count = operator.index(count)
+    except TypeError as error:
+        raise ValueError('Detail level count must be an integer') from error
+    if not 1 <= count <= kMaxDetailLevels:
+        raise ValueError(f'Detail level count must be 1 to {kMaxDetailLevels}')
+    if not model.geosets:
+        raise ValueError('Detail levels need a model with geoset 0')
+    source = model.geosets[0]
+    model.geosets = [source] + [copy.deepcopy(source) for _ in range(count - 1)]
+    return model

@@ -1,6 +1,6 @@
 # Background use and validation
 
-This guide covers Blender Sith (Coda) 1.2.0, including upstream `168dadc` and editable native pivots. Use the matching tagged source for the MCP tools and command-line launchers. See the [release record](release-1.2.0-coda.1.md) and [fork provenance](../FORK.md).
+Use the tagged source for Blender Sith (Coda) 1.3.0 to run the launchers and optional MCP companion against the matching extension. The [release record](release-1.3.0-coda.1.md) lists the new audits and export tools. Start with the [agent guide](agents.md) for the stage of the character build you are working on.
 
 Choose one exact add-on and runtime before starting. Record their versions, paths and hashes; do not assume a checkout, installed extension and ambient Python `sith` are the same copy. When using the JK/MotS model workflow, its shared current-install resolver returns the verified installed add-on/runtime and optional bounded regression argv. A missing manifest is not permission to use an older checkout. A deliberately requested development/upstream comparison uses its own explicit source and receipt without changing that default.
 
@@ -8,11 +8,46 @@ Use a disposable background process, isolated Blender preferences, two threads b
 
 ## Check a replacement model against an animation
 
-With matching 1.2.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint).
+With matching 1.3.0 source, call the optional companion's `audit_model_key` with the 3DO path, KEY path and `JKDF2` or `MOTS` KEY target. Read `model.binding.status` and the indexed findings before replacing either file. A completed job can report an incompatible pair. For source polygon budgets, `inspect_3do` reports triangles, quads and n-gons by geoset. The same native binding function is available to ordinary Blender Python scripts. See the [worked example and reproducer](MCP.md#will-this-key-animate-the-intended-joint). With this source, `lint_keys` with `model_path` runs the same binding check on every KEY of a folder, and `audit_budget` counts a 3DO against the retail limits.
 
 ## Author or bake a native pivot
 
 In 1.2.0, set `joint.sith_model3do_pivot = (x, y, z)` on a Mesh or Empty joint to author its static native frame. Existing scenes with `3do_imported_pivot` remain readable. The default 3DO export preserves the native pivot. To write a zero pivot, enable **Bake Pivots** or pass `bakePivots=True` to `model3doExporter.export3do`. Compare the attachment frame as well as the visible surface when choosing between them. See the [Blender pipeline](blender-pipeline.md).
+
+## Audit a character before release
+
+The audits need no Blender. Run them in ordinary Python 3.11+ with NumPy, in a fresh process, from the verified source. Insert the parent of its `sith` directory and check the imported module, as for imports below:
+
+```python
+import sys
+from pathlib import Path
+
+addon_dir = Path(addon_dir).resolve()  # Explicit verified job input.
+sys.path.insert(0, str(addon_dir.parent))
+sys.dont_write_bytecode = True
+
+import sith
+from sith.model.model3doLoader import load3do
+from sith.key.keyLoader import loadKey
+from sith.audit.articulation import auditArticulation, loadKeyFolder, referencePose
+
+assert Path(sith.__file__).resolve() == addon_dir / '__init__.py'
+model, _ = load3do(str(model_path))
+errors = []
+keys = loadKeyFolder(str(key_dir), errors=errors)
+stand = loadKey(str(stand_key_path))   # the stand KEY the pieces were cut against
+report = auditArticulation(model, keys, step=2.0, reference=referencePose(model, stand, 0, zeroRotations=True))
+```
+
+`stand_key_path` names the stand KEY the pieces were cut against, such as the stock `kystand1.key` for Darth Lilitari. A reseat can rewrite the character's own copy of `kystand1.key` too, so do not take the stand KEY from a reseated folder.
+
+Work on copies of the user's files in a new folder; the audits read their inputs and never change them. The [modeling workflow](modeling-workflow.md#running-the-audits-from-python) has a complete pass over the budget, cut lint, KEY lint, seat offsets, joint gaps and floor, and a [release checklist](modeling-workflow.md#release-checklist). Each audit's options and report fields are in the [audit reference](audits/README.md). Record the source revision, input hashes, parameters, reference pose and runtime with every result.
+
+A full joint-gap sweep is slow: about 80 seconds for 91 KEYs on a 14,600-face model at step 2, after the model loads. Time a few KEYs first.
+
+`sith.key.keyReseat.reseatKeyFiles(model, keyPaths, outDir, standKeyPath=...)` writes a reseated copy of each KEY that changes into `outDir`. Before it writes anything it refuses two KEYs with the same name and an `outDir` that already holds a file or folder named like one of the KEYs, names compared without regard to case, so give it a new folder. It checks the model's joint names and reads the stand KEY before it creates `outDir`, so a run refused for those reasons leaves no folder behind. With `check=True`, the default, it poses each written KEY against its source; status `fail` means a written KEY must not be installed. Run the joint-gap audit before and after on the same KEYs, step and reference. Install only the written KEYs, after review: a GOB's KEYs replace the stock ones for every model in that install. See [KEY reseat](audits/reseat.md).
+
+Through the optional MCP companion the same audits run as bounded jobs on copies of allowlisted files: `audit_budget`, `audit_segmentation`, `audit_articulation`, `audit_ground`, `lint_keys`, `audit_track_slots` and `reseat_keys`. Configure a job `timeout` of about 300 seconds for full sweeps. Read `audit.<section>.status`, not only the job's `status`. See [MCP audit tools](MCP.md#audit-tools). In Blender, the **Sith Audits** panel runs them on the active model or on files ([USAGE](../USAGE.md#-auditing-models)).
 
 ## Run the bounded fork checks
 
@@ -103,9 +138,24 @@ model3doExporter.export3do(
 
 Ensure the output parent exists first. Use an explicit absolute material directory. `sync_mesh_list=False` retains independent mesh/node ordering, so establish valid hierarchy indices before export. Do not infer the KEY allocation from mesh count.
 
+With this source, a 2.1 export also counts the model it is about to write against the retail JKDF2/MOTS limits and adds one warning per problem to `warnings`. `failOverBudget=True` raises `ValueError` before any file is written. `detailLevels=4` writes four identical geosets. `textureEditions=True` writes every MAT twice with the same name: Indexed with `texturePalette` into `textureDirectory8bit` (default `mat8`) and RGB565 into `textureDirectory16bit` (default `mat16`); it replaces `textureEncoding` and `textureDirectory`. The two folders must be different folders: the same path in another case, or two paths to one folder through a link or bind mount, is refused. RGB565 has no transparency, so texels that are see-through in the 8-bit edition are opaque in the 16-bit edition; `warnings` names each such image. `textureDither=True` dithers the Indexed output where the palette has no close colour, only inside a material's `sith_dither_mask_<cel>` image when it has one; without a mask every such texel may dither. A pattern never adds a fullbright palette entry, one the CMP's light table never darkens. `textureAvoidFullbright=True` keeps fullbright entries out of every Indexed texture of the export, for skin and cloth that must take shadow; it needs a JKDF2/MOTS CMP with its light table and is refused without one. Both apply to the 8-bit edition only:
+
+```python
+model3doExporter.export3do(
+    root, str(output), model3doLoader.Model3doFileVersion.Version2_1,
+    uvAbsolute=True, exportVertexColors=True, sync_mesh_list=False,
+    warnings=warnings, detailLevels=4, failOverBudget=True,
+    exportTextures=True, textureEditions=True, texturePalette=str(cmp_path),
+    textureDirectory8bit=str(mat8_directory), textureDirectory16bit=str(mat16_directory),
+    textureDither=True, textureAvoidFullbright=False, overwriteTextures=False, generateMipmaps=True,
+)
+```
+
+Every MAT of both editions is encoded before any file is written, so a failure up to then changes no file. The model and both editions are then published in one step; on a failure the exporter attempts to roll it back (see the rollback note below). With `overwriteTextures=False` an existing MAT is kept, not replaced, and listed in `warnings`. See the [budget](audits/budget.md) and [materials](audits/materials.md) notes.
+
 The exporter uses UV-domain metadata to avoid scaling imported pixel coordinates twice. An older scene without that metadata requires comparison with native source and actual image dimensions. Use an asymmetric grid on the intended renderer; texture size alone does not determine the runtime UV normalization contract.
 
-`exportTextures=True` encodes real image pixels; procedural shaders need baking first. Explicitly choose `INDEXED` and the intended game's/level's CMP, or a separately tested format such as RGB565. The default `RGBA32` is not a JK/MotS compatibility choice. RGB565 discards alpha; inspect warnings and the intended transparency behavior.
+`exportTextures=True` encodes real image pixels; procedural shaders need baking first. Explicitly choose `INDEXED` and the intended game's/level's CMP, or a separately tested format such as RGB565. The default `RGBA32` is not a JK/MotS compatibility choice. In this source the CMP's light table is read too, for its fullbright entries. RGB565 discards alpha; inspect warnings and the intended transparency behavior. With editions the warning reads "The 16-bit edition discards alpha from ..."; a single RGB565 export keeps "Encoding RGB565 discards alpha from ...". Publication refuses two destinations that are one file, such as two names that differ only in case in one folder, before it writes anything.
 
 A standalone baked Image or Material can also be written:
 
@@ -120,6 +170,8 @@ if not wrote:
     raise RuntimeError('An existing MAT was retained; choose a new candidate path')
 ```
 
+With this source, `exportMat` also takes `dither=True` and `avoidFullbright=True`, Indexed only, as the 3DO export does.
+
 For multiple cels, pass the Material with contiguous image bindings `_sith_mat_cel_0`, `_sith_mat_cel_1`, and so on. Passing one Image exports one cel. A palette-free placeholder is not a valid pixel source. Decode every emitted cel/mip with the actual CMP and compare its colors, alpha, dimensions and mapping.
 
 With overwrite disabled, existing MATs may be retained while a new model is written. Capture this as reuse, not new pixel output; prefer a fresh candidate folder. Bundle publication prepares geometry/images first and attempts rollback on failure. Preserve originals independently; OS-level rollback failure can leave a recovery staging directory.
@@ -133,7 +185,7 @@ keyExporter.exportKey(root, bpy.context.scene, str(key_output_path), target='JKD
 
 The default `IJIM` is different. JKDF2 and MOTS validate at most 64 joints, 8 markers and 31-character resource/joint names. `CUSTOM` removes game-specific limits, not shared format checks; it is not an escape hatch for retail compatibility. Keep the full native hierarchy/PUP allocation contract and reachable animation set consistent.
 
-Adaptive sampling can add fractional entries for supported curves. Evaluate the serialized KEY at actual frame times and between entries, not at the row index. Check explicit zero returns, holds, Bezier motion, wrap boundaries, authored Euler turns and event markers. Record FPS and any explicit override. Unsupported NLA, drivers or constraints require deliberate preparation; a quaternion orientation cannot recover an omitted revolution.
+Adaptive sampling can add fractional entries for supported curves. In this source, each rotation the exporter converts (quaternion, axis-angle or a non-YXZ Euler order) is written as the Euler triple nearest the previous sample (`sith.key.keyEuler.nearestEuler`); YXZ Euler curves are written as authored. Lint exported KEYs with `sith.audit.keylint` ([KEY lint](audits/keylint.md)). Evaluate the serialized KEY at actual frame times and between entries, not at the row index. Check explicit zero returns, holds, Bezier motion, wrap boundaries, authored Euler turns and event markers. Record FPS and any explicit override. Unsupported NLA, drivers or constraints require deliberate preparation; a quaternion orientation cannot recover an omitted revolution.
 
 ## Metadata in automation
 
@@ -148,7 +200,7 @@ Use registered properties. Raw ID-property writes bypass the setter; rejected in
 
 ## Read back before making a game claim
 
-Read the actual 3DO/KEY/MAT outputs independently. Check material closure, all native geosets, UV units, hierarchy and pivot/attachment matrices. Ordinary flat shading uses geometric vertex plus face normals; custom/explicit sharp corners retain splits. Linear RNA color values replace the older byte-layer sRGB path, and text serialization preserves more numeric precision. Recheck old manually compensated scenes and compare values rather than requiring old six-decimal text.
+Read the actual 3DO/KEY/MAT outputs independently. Check material closure, all native geosets, UV units, hierarchy and pivot/attachment matrices. Run `auditBudget` on the exported 3DO and `lintKeyHeader` with the model on the exported KEYs; an audit of the Blender scene is not an audit of the files. Ordinary flat shading uses geometric vertex plus face normals; custom/explicit sharp corners retain splits. Linear RNA color values replace the older byte-layer sRGB path, and text serialization preserves more numeric precision. Recheck old manually compensated scenes and compare values rather than requiring old six-decimal text.
 
 Mesh culling bounds must enclose emitted local geometry. An automatic model bound and an authored collision `RADIUS` are distinct; retain an intentional authored radius instead of treating it as a failed visual bound. Re-import an intact source when an old scene already lost pivot metadata. The upstream 2.2 RGB formatting repair does not change JK/MotS's 2.1 lane.
 
