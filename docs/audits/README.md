@@ -21,7 +21,9 @@ For the order in which to run them while building a character, read the
 | [KEY reseat](reseat.md) | Puts the joints that stock KEYs push off their seats back on them, in the KEY data. Checks that nothing else moved. | `reseatKeyFiles`, `reseatKey`, `checkReseat`, `checkReseatFiles` | `reseat_keys` | **Reseat KEYs** |
 | [MAT dithering and editions](materials.md) | Ordered dithering for Indexed MATs, limited by a mask; a pattern never adds a fullbright palette entry, one the CMP never darkens. Fullbright entries kept out of Indexed output on request. Both the 8-bit and the 16-bit edition from one export. | `encodeMat(..., dither=True, avoidFullbright=True)`, `fullbrightIndices`, `export3do(..., textureEditions=True, textureAvoidFullbright=True)` | none | 3DO export **8-bit and 16-bit Editions**, **Dither Indexed Textures** and **Avoid Fullbright Colours**; MAT export **Dither** and **Avoid Fullbright Colours** |
 
-Two checks are documented elsewhere:
+Related checks:
+
+- **Animation slot ownership.** Compare the exact effective puppet's animation tracks against the reference and target model's mesh-bearing branches. See [slot ownership and cosmetic package roles](slot-ownership.md).
 
 - **Model and KEY binding.** `sith.key.modelBinding.auditModelKey` reports the model node each KEY
   track addresses and the names that differ. See the

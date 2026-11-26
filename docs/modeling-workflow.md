@@ -79,6 +79,7 @@ model. The [audit index](audits/README.md) lists every status.
 | --- | --- | --- | --- | --- |
 | Engine-equivalent posing | `sith.audit.pose` | `poseModel`, `PoseLayer`, `PoseLayer.playKey`, `restPose`, `keyFrameTimes` | all | [module docstring](../sith/audit/pose.py) |
 | Model and KEY slots | `sith.key.modelBinding` | `auditModelKey` | 6, 7 | [binding audit](MCP.md#will-this-key-animate-the-intended-joint) |
+| Animation slot ownership across native bodies | `sith.audit.slotownership` | `auditSlotOwnership`, `auditFiles` or source CLI | 7 | [ownership, PUP and package roles](audits/slot-ownership.md) |
 | Joint gaps (daylight) | `sith.audit.articulation` | `auditArticulation`, `articulationJoints`, `referencePose`, `KYLE_JOINTS` | 4, 7 | [articulation](audits/articulation.md) |
 | Seat offsets | `sith.audit.articulation` | `seatOffsets`, `loadKeyFolder` | 7 | [articulation](audits/articulation.md) |
 | Cut lint: islands, ownership, enclosure | `sith.audit.segmentation` | `auditSegmentation`, `zeroRotationPose`, `testPoses`, `pieceColours` | 3 | [segmentation](audits/segmentation.md) |
