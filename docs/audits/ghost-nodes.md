@@ -69,6 +69,16 @@ Changing individual joint offsets or reauthoring the static hierarchy is a diffe
 These are native-file pose measurements. The projectile and saber results above came from the
 released, animated profiles in game.
 
+In a separate original JK 1.01 multiplayer test, we selected Kyle, Biddy R2 and Lilivane R2
+in turn with the stock `ky.pup`. Each player's active tracks included the stock stand
+(`kystand0`), hit reaction (`kyhit0`), forward walk (`kywalkf`) and crouch walk (`kycrchgn`).
+All three had type 1 collision, hit and movement radii of 0.065 JKU, and a standing centre
+0.120114 JKU above the floor. The same six of eleven stationary shots hit each player and the
+same five missed (mask 427). This confirms playback of those four stock clips on the two
+64-node rigs and matching standing collision for the sampled shots. Sole heights and limb positions
+through blends still need measurement. Crouching targets and peer saber hits require separate
+stock-puppet trials.
+
 1. Keep the reference 3DO and KEYs read-only. Pose the proposed static hierarchy with the original
    stock KEY, with the current character-specific KEY, and alongside Kyle at the same frames.
    An extra helper can be stationary during stock playback even when the private KEY animates it.
