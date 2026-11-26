@@ -16,7 +16,17 @@ The tool is a source-level command. Running it from this checkout leaves a separ
 
 The program reads one PUP's explicit rows across every mode and records each use. Inherited actions are covered where first defined. Named KEY resources must resolve in the supplied directory. Add a repeated `--key path/to/action.key` for direct COG calls or a picker-only run animation. A direct KEY can also be checked by itself. The JSON includes the reference, PUP and KEY hashes. The command returns 1 for an ownership conflict, 0 when no conflict was found, or 2 for an input error. Inspect the JSON for attachments that need review even when the exit status is 0.
 
-The Python entry point `auditSlotOwnership(reference, model, keys, bodySlots=())` accepts parsed native objects and a dictionary of effective KEYs. For each active track it compares the body slots below its numerical index in the source and target parent trees. An off-bind constant entry can move a branch just as a changing rotation can. A track that gains control of a reference body joint leading to target geometry is a conflict. A mesh on a formerly empty endpoint is reported for inspection; a sword is a legitimate example. Use `--body-slot N` for a known target-only body panel on such an endpoint. An unused slot or a childless marker with no mesh is harmless. Use a reference with the same canonical body indices. Private KEYs intentionally authored for a custom rig need their own reference.
+The Python entry point `auditSlotOwnership(reference, model, keys, bodySlots=(), bodyNodes=())` accepts parsed native objects and a dictionary of effective KEYs. For each active track it compares the body slots below its numerical index in the source and target parent trees. An off-bind constant entry can move a branch just as a changing rotation can. A track that gains control of a reference body joint leading to target geometry is a conflict. A mesh on a formerly empty endpoint is reported for inspection; a sword is a legitimate example. An unused slot or a childless marker with no mesh is harmless. Use a reference with the same canonical body indices. Private KEYs intentionally authored for a custom rig need their own reference.
+
+## Protect a face or limb across revisions
+
+Once you identify a target-only facial mesh or limb carrier, pass its hierarchy name as `--body-node NAME`. Repeat the option to protect multiple parts. The checker resolves the exact name without regard to case on the selected model, requires a unique match with geometry in its branch, and records the resolved name and slot in `declared_body_slots`. A missing, ambiguous or empty declaration returns input error 2. `--body-slot N` remains available for a verified, fixed slot in a particular file.
+
+```console
+python -m sith.audit.slotownership --reference stock/ky.3do --model arena.gob --model-member 3do/biddybl.3do --pup stock/ky.pup --key-dir effective-keys --body-node bb_snout --output biddy-arena.json
+```
+
+In two cosmetic packages the same `bb_snout` declaration resolved first to 18, where four stock equipment tracks moved the face, then to 27, where the snout stayed attached to the head. Separate full-gameplay and SBX versions of the body use 19 and 21 for the snout. Run each against its actual puppet and reference rig. Include a real equipped mesh or secondary grip in the private animation contract when the mod animates it intentionally. For a short character, compare sole height, stride and the mesh on either side of each leg joint through the affected frames. Correct numerical ownership alone cannot measure ground contact.
 
 ## Saber idle example
 

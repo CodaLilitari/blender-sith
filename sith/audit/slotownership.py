@@ -51,11 +51,12 @@ def _at_bind(track, node):
     return True
 
 
-def auditSlotOwnership(reference, model, keys, bodySlots=()):
+def auditSlotOwnership(reference, model, keys, bodySlots=(), bodyNodes=()):
     """Compare numerical track ownership. keys maps labels to parsed, effective KEYs.
 
     Reference mesh-bearing slots are protected when they still lead to geometry on the
-    target. bodySlots additionally declares target body geometry on nonstandard slots.
+    target. bodySlots or unique, case-insensitive bodyNodes can declare additional
+    target body geometry on nonstandard slots. Names resolve independently on each model.
     A mesh-bearing extra branch without a known body joint is reported for inspection.
     """
     if not keys:
@@ -67,6 +68,12 @@ def auditSlotOwnership(reference, model, keys, bodySlots=()):
     source_visible = {n.idx for n in ref_nodes if n.meshIdx >= 0}
     body = {i for i in source_visible if i < len(nodes) and target[i] & visible}
     extra_body = set(bodySlots)
+    for name in bodyNodes:
+        matches = [n.idx for n in nodes if n.name.casefold() == name.casefold()]
+        if len(matches) != 1:
+            reason = 'Missing' if not matches else 'Ambiguous'
+            raise ValueError(f"{reason} target body node {name!r} (matched slots {matches})")
+        extra_body.add(matches[0])
     for i in extra_body:
         if not 0 <= i < len(nodes) or not target[i] & visible:
             raise ValueError(f"Body slot {i} is outside the target or has no mesh in its branch")
@@ -93,6 +100,7 @@ def auditSlotOwnership(reference, model, keys, bodySlots=()):
                 "new_body_slots": sorted(affected), "visible_branch_slots": sorted(actual & visible),
             })
     return {"keys_checked": len(keys), "reference_nodes": len(source), "target_nodes": len(target),
+            "declared_body_slots": [{"slot": i, "name": nodes[i].name} for i in sorted(extra_body)],
             "status": ("conflict" if any(f["classification"] == "foreign_body_motion" for f in findings)
                        else "review" if findings else "clear"), "findings": findings}
 
@@ -193,7 +201,8 @@ def _target_model(path, member):
                     "archive": {"path": str(path), "sha256": archive_hash.hexdigest()}}
 
 
-def auditFiles(reference, model, pup=None, keyDir=None, directKeys=(), bodySlots=(), modelMember=None):
+def auditFiles(reference, model, pup=None, keyDir=None, directKeys=(), bodySlots=(), modelMember=None,
+               bodyNodes=()):
     """Audit an exact loose or packed model and return its provenance and PUP action names."""
     if (pup is None) != (keyDir is None):
         raise ValueError("Use --pup and --key-dir together")
@@ -211,7 +220,8 @@ def auditFiles(reference, model, pup=None, keyDir=None, directKeys=(), bodySlots
         raise ValueError("Supply a PUP with its effective KEY directory, or at least one direct KEY")
     ref_model = load3do(reference)[0]
     target_model, target_receipt = _target_model(model, modelMember)
-    report = auditSlotOwnership(ref_model, target_model, {n: loadKey(p) for n, p in files.items()}, bodySlots)
+    report = auditSlotOwnership(ref_model, target_model, {n: loadKey(p) for n, p in files.items()},
+                                bodySlots, bodyNodes)
     report.update(reference=_receipt(reference), model=target_receipt, pup=_receipt(pup) if pup else None,
                   keys={n: dict(**_receipt(p), uses=uses.get(n, [])) for n, p in sorted(files.items())})
     return report
@@ -226,13 +236,15 @@ def main(argv=None):
     parser.add_argument("--key-dir", type=Path, help="effective KEY directory after package precedence")
     parser.add_argument("--key", type=Path, action="append", default=[], help="also check a direct-action KEY (repeatable)")
     parser.add_argument("--body-slot", type=int, action="append", default=[], help="also protect this target body joint")
+    parser.add_argument("--body-node", action="append", default=[], metavar="NAME",
+                        help="protect a unique target body node by name (case-insensitive, repeatable)")
     parser.add_argument("--output", type=Path, help="write JSON here instead of stdout")
     args = parser.parse_args(argv)
     try:
         # Some native readers report import warnings on stdout; keep the JSON channel clean.
         with redirect_stdout(sys.stderr):
             report = auditFiles(args.reference, args.model, args.pup, args.key_dir, args.key, args.body_slot,
-                                args.model_member)
+                                args.model_member, args.body_node)
         result = json.dumps(report, indent=2) + "\n"
         if args.output:
             if args.output.exists():

@@ -59,6 +59,27 @@ class SlotOwnershipTests(unittest.TestCase):
         # The same prop slot on the animation's original rig is a matching owner.
         self.assertEqual(auditSlotOwnership(model, model, {'idle': clip(3, 'other')})['status'], 'clear')
 
+    def test_named_body_part_follows_an_attachment_across_slot_changes(self):
+        keys = {'idle': clip(3, 'weapon')}
+        base = [('root', -1, -1), ('hip', 0, 0), ('head', 0, 1)]
+        old = rig(base + [('snout', 2, 2), ('unused', 0, -1)])
+        new = rig(base + [('unused', 0, -1), ('snout', 2, 2)])
+        for model, slot, status in [(old, 3, 'conflict'), (new, 4, 'clear')]:
+            result = auditSlotOwnership(self.ref, model, keys, bodyNodes=['Snout'])
+            self.assertEqual(result['status'], status)
+            self.assertEqual(result['declared_body_slots'], [{'slot': slot, 'name': 'snout'}])
+        # An undeclared weapon mesh on a formerly empty slot still gets an advisory.
+        prop = rig(base + [('blade', 2, 2), ('snout', 2, 3)])
+        self.assertEqual(auditSlotOwnership(self.ref, prop, keys, bodyNodes=['snout'])['status'], 'review')
+
+    def test_named_body_declarations_fail_if_missing_ambiguous_or_empty(self):
+        base = [('root', -1, -1), ('hip', 0, 0), ('head', 0, 1)]
+        keys = {'idle': clip(3)}
+        for rows, text in [([], 'Missing'), ([('snout', 2, 2), ('SNOUT', 2, 3)], 'Ambiguous'),
+                           ([('snout', 2, -1)], 'no mesh')]:
+            with self.subTest(text=text), self.assertRaisesRegex(ValueError, text):
+                auditSlotOwnership(self.ref, rig(base + rows), keys, bodyNodes=['snout'])
+
     def test_bind_pose_track_and_unallocated_track(self):
         key = clip(3, offset=0)
         self.assertEqual(auditSlotOwnership(self.ref, self.picker, {'idle': key})['status'], 'clear')
