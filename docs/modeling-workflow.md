@@ -53,9 +53,10 @@ stage. Agents should also read the [agent guide](agents.md).
 - **Seat.** Where a node sits on its parent when the character stands: its position in the
   standing KEY, or the model's rest position. A KEY that moves a node off its seat opens a
   close-fitting joint by that distance.
-- **Adapter node.** A static node between a Kyle node and its parent. It holds the character's own
-  bone length, so KEYs that drive Kyle's nodes play on the character's proportions. It comes from
-  Biddy Blas's rig; Darth Lilitari R9 and Lilivane use it too.
+- **Adapter or ghost node.** An extra joint between a Kyle joint and its parent. Its local
+  transform places the animated joint at the character's own limb length. Red used these in
+  Biddy Blas, Darth Lilitari R9 and Lilivane. SMLiberator's NPC pack demonstrates the technique
+  with stock KEYs. [Compare the two approaches](audits/ghost-nodes.md).
 - **Daylight.** A line of sight through a joint that meets no polygon of the posed model.
 - **Sample points.** The KEYs, frames and cameras an audit uses. A before-and-after comparison
   must use the same ones.
@@ -182,8 +183,9 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
   hair, so the faults stayed. R9 started again from a new body.
 - Biddy Blas R3.4: his calves were made 20% longer. His feet still had to meet the floor in all 91
   stock KEYs, so every later leg change had to be measured again.
-- Lilivane R1: she stands 0.0875 JKU tall, 48% of Kyle's height. Her hitbox and camera height are
-  still Kyle's: the player template sets them, not the model.
+- Lilivane R1 stands 0.0875 JKU tall, 48% of Kyle's height. In the R2 roster the player
+  template supplies Kyle's collision radius and the 3DO retains Kyle's insertion height, which
+  also matters for the position of the standing [collision sphere](audits/ghost-nodes.md#kyles-multiplayer-hitbox).
 
 **Do this.**
 
@@ -192,8 +194,9 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 2. After cutting (stage 3), turn each piece as a whole into Kyle's rest direction. Nothing is bent
    and nothing is stretched.
 3. Use an adapter rig. Between each Kyle node and its parent, a static adapter holds the
-   character's bone length in place of Kyle's. The stock KEYs still drive Kyle's 18 nodes, so every
-   animation plays, on the character's skeleton. Darth Lilitari R9 at rest:
+   character's bone length in place of Kyle's. The stock KEYs still address Kyle's numbered
+   joints. Check every extra slot against the actual KEYs, including the four retail clips that
+   drive slot 18. Darth Lilitari R9 at rest:
 
    | Length | Darth Lilitari | Kyle |
    | --- | --- | --- |
@@ -210,9 +213,10 @@ and the inner limbs in idle, run, crouch and falls, from behind and both back th
 5. Reduce dense parts to fit the per-mesh limits and rebuild quads after reducing. Place a part
    taken from another build (Darth Lilitari's head B) by fitting its scale and position to the
    body.
-6. A character much smaller than Kyle needs ground-contact tracks. In every frame of Lilivane's 91
-   KEYs her lowest point is moved to Kyle's; in the swim KEYs the centres of the bounding boxes are
-   matched instead.
+6. Try the static fit with the intended KEYs and player height. Measure the planted boot as the
+   body moves forward. Red's Lilivane uses two additional tracks to bring her lowest point to
+   Kyle's during grounded actions and align the body centres during a swim. The
+   [short-character comparison](audits/ghost-nodes.md) explains when a fixed offset is enough.
 
 **Checks.**
 
