@@ -79,6 +79,10 @@ same five missed (mask 427). This confirms playback of those four stock clips on
 through blends still need measurement. Crouching targets and peer saber hits require separate
 stock-puppet trials.
 
+SMLiberator's unchanged Ugnaught (`kyug.3do`) played the same four clips with both radii at
+0.065 JKU and the same six hits in eleven shots placed relative to its own origin. On the same
+floor its standing centre was 0.101000 JKU high, 0.019114 JKU lower than Kyle's.
+
 1. Keep the reference 3DO and KEYs read-only. Pose the proposed static hierarchy with the original
    stock KEY, with the current character-specific KEY, and alongside Kyle at the same frames.
    An extra helper can be stationary during stock playback even when the private KEY animates it.
